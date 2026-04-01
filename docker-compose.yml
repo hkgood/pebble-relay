@@ -1,0 +1,21 @@
+services:
+  pebble-relay:
+    build: .
+    image: pebble-relay:latest
+    container_name: pebble-relay
+    ports:
+      - "8977:8977"
+    environment:
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-pebble-relay-secret-token}
+      - PORT=8977
+    volumes:
+      - pebble-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8977/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pebble-data:
