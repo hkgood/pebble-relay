@@ -5,9 +5,6 @@ services:
     container_name: pebble-relay
     ports:
       - "8977:8977"
-    environment:
-      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-pebble-relay-secret-token}
-      - PORT=8977
     volumes:
       - pebble-data:/data
     restart: unless-stopped

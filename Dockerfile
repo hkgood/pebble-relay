@@ -2,21 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装依赖（只需要 Flask）
-RUN pip install --no-cache-dir flask
+# Install dependencies
+RUN pip install --no-cache-dir flask pyyaml bcrypt
 
-# 复制代码
+# Copy code
 COPY server.py .
 
-# 创建数据目录
+# Create data directory
 RUN mkdir -p /data
 
-# 暴露端口
+# Expose port
 EXPOSE 8977
 
-# 环境变量
-ENV PORT=8977
+# Environment variables
+ENV CONFIG_PATH=/data/config.yaml
 ENV DB_PATH=/data/relay.db
-ENV WEBHOOK_TOKEN=change-me-in-production
+ENV PORT=8977
 
 CMD ["python", "server.py"]
