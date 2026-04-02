@@ -1043,15 +1043,15 @@ def legacy_post_status():
 
 @app.route("/register")
 def register_page():
-    return send_from_directory("/home/rocky/pebble-relay", "register.html")
+    return send_from_directory("/app", "register.html")
 
 @app.route("/admin")
 def admin_page():
-    return send_from_directory("/home/rocky/pebble-relay", "admin.html")
+    return send_from_directory("/app", "admin.html")
 
 @app.route("/watch-setup")
 def watch_setup_page():
-    return send_from_directory("/home/rocky/pebble-relay", "watch-setup.html")
+    return send_from_directory("/app", "watch-setup.html")
 
 # ============================================================
 # Start
