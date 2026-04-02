@@ -5,8 +5,8 @@ WORKDIR /app
 # Install dependencies
 RUN pip install --no-cache-dir flask pyyaml bcrypt
 
-# Copy code
-COPY server.py .
+# Copy code and static files
+COPY server.py register.html admin.html watch-setup.html ./
 
 # Create data directory
 RUN mkdir -p /data

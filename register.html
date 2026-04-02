@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - Pebble Relay</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        .container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 420px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+        input::placeholder {
+            color: #666;
+        }
+        button {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 10px;
+            display: none;
+        }
+        .result.success {
+            background: rgba(0,255,136,0.1);
+            border: 1px solid rgba(0,255,136,0.3);
+        }
+        .result.error {
+            background: rgba(255,82,82,0.1);
+            border: 1px solid rgba(255,82,82,0.3);
+            color: #ff6b6b;
+        }
+        .result pre {
+            font-size: 12px;
+            word-break: break-all;
+            white-space: pre-wrap;
+            margin-top: 10px;
+            color: #888;
+        }
+        .result .token {
+            background: rgba(0,0,0,0.3);
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            word-break: break-all;
+        }
+        .tip {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #666;
+        }
+        .tip a {
+            color: #4facfe;
+            text-decoration: none;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⌚ Pebble Relay</h1>
+        <p class="subtitle">注册新账户</p>
+        
+        <div class="form-group">
+            <label>PocketBase 服务器地址</label>
+            <input type="text" id="pbUrl" value="https://pb.osglab.com" placeholder="https://pb.osglab.com">
+        </div>
+        
+        <div class="form-group">
+            <label>Pebble Relay 服务器地址</label>
+            <input type="text" id="relayUrl" value="http://115.29.162.18:8977" placeholder="http://your-server:8977">
+        </div>
+        
+        <div class="form-group">
+            <label>注册码</label>
+            <input type="text" id="regCode" placeholder="请输入注册码">
+        </div>
+        
+        <div class="form-group">
+            <label>用户名</label>
+            <input type="text" id="username" placeholder="给自己起个名字">
+        </div>
+        
+        <button id="registerBtn" onclick="doRegister()">注册</button>
+        
+        <div id="result" class="result"></div>
+        
+        <p class="tip">已有账户？<a href="/watch-setup">绑定手表</a></p>
+    </div>
+
+    <script>
+        async function doRegister() {
+            const btn = document.getElementById('registerBtn');
+            const result = document.getElementById('result');
+            
+            const relayUrl = document.getElementById('relayUrl').value.replace(/\/$/, '');
+            const regCode = document.getElementById('regCode').value.trim();
+            const username = document.getElementById('username').value.trim();
+            
+            if (!regCode || !username) {
+                result.className = 'result error';
+                result.style.display = 'block';
+                result.innerHTML = '请填写注册码和用户名';
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>注册中...';
+            result.style.display = 'none';
+            
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        registration_code: regCode,
+                        name: username
+                    })
+                });
+                
+                const data = await resp.json();
+                
+                if (resp.ok && data.ok) {
+                    result.className = 'result success';
+                    result.style.display = 'block';
+                    result.innerHTML = `
+                        <strong>✅ 注册成功！</strong>
+                        <p style="margin-top:10px;color:#888;font-size:13px;">请保存以下 Token，此Token无法找回：</p>
+                        <div class="token">${data.user_token}</div>
+                        <p style="margin-top:10px;color:#666;font-size:12px;">User ID: ${data.user_id}</p>
+                    `;
+                } else {
+                    result.className = 'result error';
+                    result.style.display = 'block';
+                    result.innerHTML = `注册失败：${data.error || '未知错误'}`;
+                }
+            } catch (e) {
+                result.className = 'result error';
+                result.style.display = 'block';
+                result.innerHTML = `网络错误：${e.message}`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '注册';
+            }
+        }
+    </script>
+</body>
+</html>

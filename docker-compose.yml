@@ -7,6 +7,10 @@ services:
       - "8977:8977"
     volumes:
       - pebble-data:/data
+    environment:
+      - PB_URL=https://pb.osglab.com
+      - PB_ADMIN_EMAIL=rocky.hk@gmail.com
+      - PB_ADMIN_PASSWORD=gz203799
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8977/health')"]

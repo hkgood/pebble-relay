@@ -1,7 +1,7 @@
 """
-pebble-relay v2.0
+pebble-relay v2.0-pb
 Multi-user relay server for OpenClaw <-> Smartwatch
-Supports: multiple OpenClaw instances, multiple watch devices, user isolation
+Uses PocketBase for account management (pebble_users, pebble_reg_codes, pebble_admins collections)
 """
 
 import os
@@ -13,6 +13,7 @@ import secrets
 import threading
 import hashlib
 import bcrypt
+import requests
 from datetime import datetime
 from pathlib import Path
 from functools import wraps
@@ -29,6 +30,15 @@ CONFIG_PATH = os.environ.get("CONFIG_PATH", "/data/config.yaml")
 DB_PATH = os.environ.get("DB_PATH", "/data/relay.db")
 PORT = int(os.environ.get("PORT", "8977"))
 
+# PocketBase configuration
+PB_URL = os.environ.get("PB_URL", "https://pb.osglab.com")
+PB_ADMIN_EMAIL = os.environ.get("PB_ADMIN_EMAIL", "rocky.hk@gmail.com")
+PB_ADMIN_PASSWORD = os.environ.get("PB_ADMIN_PASSWORD", "gz203799")
+
+# In-memory cache for PocketBase admin token
+_pb_admin_token = None
+_pb_admin_token_exp = 0
+
 def load_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, 'r') as f:
@@ -39,12 +49,17 @@ def load_config():
             "debug": False
         },
         "admin": {
-            "password_hash": "",  # Set on first run
-            "registration_code": secrets.token_hex(8)  # Auto-generated
+            "password_hash": "",
+            "registration_code": secrets.token_hex(8)
         },
         "limits": {
             "message_retention_days": 7,
             "max_messages_per_instance": 200
+        },
+        "pocketbase": {
+            "url": PB_URL,
+            "admin_email": PB_ADMIN_EMAIL,
+            "admin_password": PB_ADMIN_PASSWORD
         }
     }
 
@@ -55,7 +70,85 @@ sse_clients = {}
 sse_clients_lock = threading.Lock()
 
 # ============================================================
-# Database
+# PocketBase API Helpers
+# ============================================================
+
+def get_pb_admin_token():
+    """Get or refresh PocketBase admin token"""
+    global _pb_admin_token, _pb_admin_token_exp
+    
+    # Check if current token is still valid
+    if _pb_admin_token and time.time() < _pb_admin_token_exp - 60:
+        return _pb_admin_token
+    
+    # Refresh token using superuser auth (0.35.x style)
+    try:
+        resp = requests.post(
+            f"{PB_URL}/api/collections/users/auth-with-password",
+            json={"identity": PB_ADMIN_EMAIL, "password": PB_ADMIN_PASSWORD},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            _pb_admin_token = data.get("token", "")
+            # Token typically expires in 24 hours, refresh 1 hour before
+            _pb_admin_token_exp = time.time() + 23 * 3600
+            return _pb_admin_token
+    except Exception as e:
+        print(f"[pb] Failed to get admin token: {e}")
+    
+    return _pb_admin_token
+
+def pb_api_get(collection, record_id=None, params=None):
+    """GET request to PocketBase API"""
+    token = get_pb_admin_token()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    
+    if record_id:
+        url = f"{PB_URL}/api/collections/{collection}/records/{record_id}"
+    else:
+        url = f"{PB_URL}/api/collections/{collection}/records"
+    
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        return resp.status_code, resp.json()
+    except Exception as e:
+        return 500, {"error": str(e)}
+
+def pb_api_post(collection, data, record_id=None):
+    """POST request to PocketBase API"""
+    token = get_pb_admin_token()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    
+    if record_id:
+        url = f"{PB_URL}/api/collections/{collection}/records/{record_id}"
+        try:
+            resp = requests.patch(url, headers=headers, json=data, timeout=10)
+            return resp.status_code, resp.json()
+        except Exception as e:
+            return 500, {"error": str(e)}
+    else:
+        url = f"{PB_URL}/api/collections/{collection}/records"
+        try:
+            resp = requests.post(url, headers=headers, json=data, timeout=10)
+            return resp.status_code, resp.json()
+        except Exception as e:
+            return 500, {"error": str(e)}
+
+def pb_api_delete(collection, record_id):
+    """DELETE request to PocketBase API"""
+    token = get_pb_admin_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    url = f"{PB_URL}/api/collections/{collection}/records/{record_id}"
+    try:
+        resp = requests.delete(url, headers=headers, timeout=10)
+        return resp.status_code, resp.json() if resp.content else {}
+    except Exception as e:
+        return 500, {"error": str(e)}
+
+# ============================================================
+# Database (Local - for relay data only, not users)
 # ============================================================
 
 def init_db():
@@ -63,26 +156,18 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            user_token_hash TEXT NOT NULL,
-            name TEXT DEFAULT '',
-            created_at INTEGER NOT NULL
-        )
-    """)
-    
+    # oc_instances - OpenClaw instances per user
     c.execute("""
         CREATE TABLE IF NOT EXISTS oc_instances (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
             name TEXT NOT NULL,
             instance_token_hash TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            created_at INTEGER NOT NULL
         )
     """)
     
+    # watch_devices - Watch devices per user
     c.execute("""
         CREATE TABLE IF NOT EXISTS watch_devices (
             id TEXT PRIMARY KEY,
@@ -91,11 +176,11 @@ def init_db():
             watch_token_hash TEXT NOT NULL,
             current_instance_id TEXT,
             created_at INTEGER NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (current_instance_id) REFERENCES oc_instances(id)
         )
     """)
     
+    # messages - Messages per instance
     c.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
@@ -110,6 +195,7 @@ def init_db():
         )
     """)
     
+    # status - Status snapshots per instance
     c.execute("""
         CREATE TABLE IF NOT EXISTS status (
             instance_id TEXT PRIMARY KEY,
@@ -142,22 +228,162 @@ def verify_token(token: str, hashed: str) -> bool:
     except:
         return False
 
+# ============================================================
+# User Management via PocketBase
+# ============================================================
+
+def get_user_by_token(user_token: str) -> dict | None:
+    """Find user by user_token in pebble_users collection"""
+    status, data = pb_api_get("pebble_users", params={"filter": f'user_token="{user_token}"'})
+    
+    if status == 200 and data.get("items"):
+        item = data["items"][0]
+        return {
+            "id": item["id"],
+            "name": item.get("name", ""),
+            "email": item.get("email", ""),
+            "user_token": item.get("user_token", "")
+        }
+    return None
+
+def get_user_by_id(user_id: str) -> dict | None:
+    """Find user by ID in pebble_users collection"""
+    status, data = pb_api_get("pebble_users", record_id=user_id)
+    
+    if status == 200:
+        return {
+            "id": data["id"],
+            "name": data.get("name", ""),
+            "email": data.get("email", ""),
+            "user_token": data.get("user_token", "")
+        }
+    return None
+
+def create_user(name: str, user_token: str) -> dict | None:
+    """Create a new user in pebble_users collection"""
+    status, data = pb_api_post("pebble_users", {
+        "name": name,
+        "user_token": user_token
+    })
+    
+    if status in (200, 201):
+        return {
+            "id": data["id"],
+            "name": name,
+            "user_token": user_token
+        }
+    print(f"[pb] create_user failed: {status} {data}")
+    return None
+
+def validate_registration_code(code: str) -> bool:
+    """Check if registration code exists and is unused"""
+    status, data = pb_api_get("pebble_reg_codes", params={"filter": f'code="{code}" AND used=false'})
+    
+    if status == 200 and data.get("items"):
+        return True
+    return False
+
+def mark_reg_code_used(code: str) -> bool:
+    """Mark a registration code as used"""
+    # Find the record first
+    status, data = pb_api_get("pebble_reg_codes", params={"filter": f'code="{code}"'})
+    
+    if status == 200 and data.get("items"):
+        record_id = data["items"][0]["id"]
+        status, _ = pb_api_post("pebble_reg_codes", {"used": True}, record_id=record_id)
+        return status in (200, 204)
+    
+    return False
+
+def generate_registration_code() -> str:
+    """Generate a new registration code in pebble_reg_codes"""
+    code = secrets.token_hex(8)
+    status, data = pb_api_post("pebble_reg_codes", {
+        "code": code,
+        "used": False,
+        "created_at": int(time.time())
+    })
+    
+    if status in (200, 201):
+        return code
+    print(f"[pb] generate_reg_code failed: {status} {data}")
+    return None
+
+def get_reg_code_count() -> int:
+    """Get total registration code count"""
+    status, data = pb_api_get("pebble_reg_codes")
+    if status == 200:
+        return data.get("totalItems", 0)
+    return 0
+
+def get_user_count() -> int:
+    """Get total user count"""
+    status, data = pb_api_get("pebble_users")
+    if status == 200:
+        return data.get("totalItems", 0)
+    return 0
+
+def get_all_users() -> list:
+    """Get all users from pebble_users"""
+    status, data = pb_api_get("pebble_users")
+    if status == 200:
+        return data.get("items", [])
+    return []
+
+def delete_user(user_id: str) -> bool:
+    """Delete a user"""
+    status, _ = pb_api_delete("pebble_users", user_id)
+    return status in (200, 204)
+
+# ============================================================
+# Admin Management via PocketBase (pebble_admins collection)
+# ============================================================
+
+def setup_admin(username: str, password: str) -> bool:
+    """Setup admin user in pebble_admins collection"""
+    status, data = pb_api_post("pebble_admins", {
+        "username": username,
+        "password": password,
+        "passwordConfirm": password,
+        "name": "Admin"
+    })
+    
+    # 400 might mean already exists
+    if status in (200, 201, 400):
+        return True
+    print(f"[pb] setup_admin failed: {status} {data}")
+    return False
+
+def verify_admin(username: str, password: str) -> dict | None:
+    """Verify admin credentials against pebble_admins"""
+    try:
+        resp = requests.post(
+            f"{PB_URL}/api/collections/pebble_admins/auth-with-password",
+            json={"identity": username, "password": password},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return {
+                "id": data["record"]["id"],
+                "username": data["record"]["username"],
+                "token": data.get("token", "")
+            }
+    except Exception as e:
+        print(f"[pb] verify_admin error: {e}")
+    return None
+
+# ============================================================
+# Local instance/watch lookup (still uses local SQLite)
+# ============================================================
+
 def get_instance_by_token(instance_token: str) -> dict | None:
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM oc_instances")
     for row in c.fetchall():
         if verify_token(instance_token, row['instance_token_hash']):
-            return dict(row)
-    conn.close()
-    return None
-
-def get_user_by_token(user_token: str) -> dict | None:
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM users")
-    for row in c.fetchall():
-        if verify_token(user_token, row['user_token_hash']):
+            conn.close()
             return dict(row)
     conn.close()
     return None
@@ -168,6 +394,7 @@ def get_watch_by_token(watch_token: str) -> dict | None:
     c.execute("SELECT * FROM watch_devices")
     for row in c.fetchall():
         if verify_token(watch_token, row['watch_token_hash']):
+            conn.close()
             return dict(row)
     conn.close()
     return None
@@ -179,7 +406,6 @@ def get_watch_by_token(watch_token: str) -> dict | None:
 def require_instance_token(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Get token from header
         token = request.headers.get("X-Instance-Token", "")
         if not token:
             return jsonify({"error": "Missing X-Instance-Token"}), 401
@@ -225,18 +451,34 @@ def require_watch_token(f):
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Check header-based admin auth
         password = request.headers.get("X-Admin-Password", "")
-        if not password:
-            return jsonify({"error": "Missing X-Admin-Password"}), 401
-        
         stored_hash = config.get("admin", {}).get("password_hash", "")
-        if not stored_hash:
-            return jsonify({"error": "Admin not configured"}), 401
         
-        if not bcrypt.checkpw(password.encode(), stored_hash.encode()):
-            return jsonify({"error": "Invalid admin password"}), 401
+        if stored_hash and password:
+            try:
+                if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+                    return f(*args, **kwargs)
+            except:
+                pass
         
-        return f(*args, **kwargs)
+        # Check pebble_admins auth
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            # Try to verify via pebble_admins
+            try:
+                resp = requests.get(
+                    f"{PB_URL}/api/collections/pebble_admins/auth-refresh",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    return f(*args, **kwargs)
+            except:
+                pass
+        
+        return jsonify({"error": "Unauthorized"}), 401
     return decorated
 
 # ============================================================
@@ -256,10 +498,8 @@ def cleanup_old_messages(instance_id: str):
     c = conn.cursor()
     cutoff = get_timestamp() - (max_days * 86400)
     
-    # Delete old messages
     c.execute("DELETE FROM messages WHERE instance_id = ? AND timestamp < ?", (instance_id, cutoff))
     
-    # Keep only last N messages
     c.execute("""
         DELETE FROM messages WHERE instance_id = ? AND id NOT IN (
             SELECT id FROM messages WHERE instance_id = ? ORDER BY timestamp DESC LIMIT ?
@@ -279,30 +519,25 @@ def notify_watch_sse(instance_id: str, event_data: dict):
             except:
                 pass
 
-def notify_all_watches_of_user(user_id: str, event_data: dict):
-    """Broadcast to all watches belonging to a user"""
-    with sse_clients_lock:
-        for watch_token, client in list(sse_clients.items()):
-            try:
-                # Check if this watch belongs to the user
-                watch = get_watch_by_token(watch_token)
-                if watch and watch["user_id"] == user_id:
-                    client["queue"].put(json.dumps(event_data))
-            except:
-                pass
-
 # ============================================================
 # Health & Admin
 # ============================================================
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "service": "pebble-relay", "version": "2.0.0", "time": get_timestamp()}), 200
+    return jsonify({
+        "ok": True, 
+        "service": "pebble-relay", 
+        "version": "2.0.0-pb", 
+        "pocketbase": PB_URL,
+        "time": get_timestamp()
+    }), 200
 
 @app.route("/api/v1/admin/setup", methods=["POST"])
 def admin_setup():
-    """First-time admin password setup"""
+    """First-time admin setup - creates admin in pebble_admins collection"""
     data = request.get_json() or {}
+    username = data.get("username", "")
     password = data.get("password", "")
     
     stored_hash = config.get("admin", {}).get("password_hash", "")
@@ -312,23 +547,31 @@ def admin_setup():
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
     
+    # Set local config password hash
     config["admin"]["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     
-    # Save config
+    # Also create in PocketBase pebble_admins
+    if username:
+        setup_admin(username, password)
+    
+    # Generate first registration code
+    first_code = generate_registration_code()
+    
     with open(CONFIG_PATH, 'w') as f:
         yaml.dump(config, f)
     
-    return jsonify({"ok": True, "message": "Admin password set"}), 200
+    return jsonify({
+        "ok": True, 
+        "message": "Admin password set",
+        "first_registration_code": first_code
+    }), 200
 
 @app.route("/api/v1/admin/info", methods=["GET"])
 @require_admin
 def admin_info():
-    """Get server info (no instance details for security)"""
+    """Get server info"""
     conn = get_db()
     c = conn.cursor()
-    
-    c.execute("SELECT COUNT(*) as cnt FROM users")
-    user_count = c.fetchone()["cnt"]
     
     c.execute("SELECT COUNT(*) as cnt FROM oc_instances")
     instance_count = c.fetchone()["cnt"]
@@ -338,23 +581,47 @@ def admin_info():
     
     conn.close()
     
+    user_count = get_user_count()
+    reg_code = config.get("admin", {}).get("registration_code", "")
+    
     return jsonify({
         "user_count": user_count,
         "instance_count": instance_count,
         "watch_count": watch_count,
-        "registration_code": config.get("admin", {}).get("registration_code", ""),
+        "registration_code": reg_code,
+        "pocketbase_url": PB_URL,
         "uptime": get_timestamp()
     }), 200
 
 @app.route("/api/v1/admin/registration-code", methods=["POST"])
 @require_admin
 def regenerate_registration_code():
-    """Regenerate registration code"""
-    new_code = secrets.token_hex(8)
-    config["admin"]["registration_code"] = new_code
-    with open(CONFIG_PATH, 'w') as f:
-        yaml.dump(config, f)
-    return jsonify({"registration_code": new_code}), 200
+    """Generate a new registration code"""
+    new_code = generate_registration_code()
+    if new_code:
+        config["admin"]["registration_code"] = new_code
+        with open(CONFIG_PATH, 'w') as f:
+            yaml.dump(config, f)
+        return jsonify({"registration_code": new_code}), 200
+    return jsonify({"error": "Failed to generate code"}), 500
+
+@app.route("/api/v1/admin/users", methods=["GET"])
+@require_admin
+def list_users():
+    """List all users"""
+    users = get_all_users()
+    return jsonify({
+        "users": [{"id": u["id"], "name": u.get("name", ""), "email": u.get("email", "")} for u in users],
+        "total": len(users)
+    }), 200
+
+@app.route("/api/v1/admin/users/<user_id>", methods=["DELETE"])
+@require_admin
+def delete_user_api(user_id):
+    """Delete a user"""
+    if delete_user(user_id):
+        return jsonify({"ok": True}), 200
+    return jsonify({"error": "Failed to delete user"}), 500
 
 # ============================================================
 # User Registration
@@ -362,35 +629,34 @@ def regenerate_registration_code():
 
 @app.route("/api/v1/register", methods=["POST"])
 def register_user():
-    """Register a new user (requires valid registration code)"""
+    """Register a new user (requires valid registration code from PocketBase)"""
     data = request.get_json() or {}
     code = data.get("registration_code", "")
     name = data.get("name", "")
     
-    if code != config.get("admin", {}).get("registration_code", ""):
-        return jsonify({"error": "Invalid registration code"}), 401
+    # Validate registration code against PocketBase
+    if not validate_registration_code(code):
+        return jsonify({"error": "Invalid or used registration code"}), 401
     
     user_token = secrets.token_urlsafe(32)
-    user_id = str(uuid.uuid4())[:8]
     
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO users (id, user_token_hash, name, created_at) VALUES (?, ?, ?, ?)",
-        (user_id, hash_token(user_token), name, get_timestamp())
-    )
-    conn.commit()
-    conn.close()
+    # Create user in PocketBase
+    user = create_user(name, user_token)
+    if not user:
+        return jsonify({"error": "Failed to create user"}), 500
+    
+    # Mark registration code as used
+    mark_reg_code_used(code)
     
     return jsonify({
         "ok": True,
-        "user_id": user_id,
+        "user_id": user["id"],
         "user_token": user_token,
         "message": "Save this token securely - it cannot be recovered"
     }), 201
 
 # ============================================================
-# OpenClaw Instance Management
+# OpenClaw Instance Management (local SQLite)
 # ============================================================
 
 @app.route("/api/v1/oc/register", methods=["POST"])
@@ -453,7 +719,6 @@ def push_message():
     source = data.get("source", "openclaw")
     sender = data.get("sender", "System")
     
-    # Save message
     msg_id = str(uuid.uuid4())[:8]
     conn = get_db()
     c = conn.cursor()
@@ -464,10 +729,8 @@ def push_message():
     conn.commit()
     conn.close()
     
-    # Cleanup old messages
     cleanup_old_messages(instance["id"])
     
-    # Update status - reset last_message_ago
     conn = get_db()
     c = conn.cursor()
     c.execute("UPDATE status SET last_message_ago = 0, lastUpdate = ? WHERE instance_id = ?",
@@ -475,7 +738,6 @@ def push_message():
     conn.commit()
     conn.close()
     
-    # Broadcast to watching watches
     event = {
         "type": "message",
         "instance_id": instance["id"],
@@ -531,7 +793,6 @@ def push_thinking():
     conn.commit()
     conn.close()
     
-    # Broadcast to watching watches
     event = {
         "type": "thinking",
         "instance_id": instance["id"],
@@ -601,7 +862,6 @@ def subscribe_instance():
     instance_id = data.get("instance_id", "")
     
     if instance_id:
-        # Verify instance belongs to same user
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT id FROM oc_instances WHERE id = ? AND user_id = ?",
@@ -618,7 +878,6 @@ def subscribe_instance():
     conn.commit()
     conn.close()
     
-    # Update SSE client subscription
     with sse_clients_lock:
         if watch["watch_token"] in sse_clients:
             sse_clients[watch["watch_token"]]["instance_id"] = instance_id
@@ -638,18 +897,15 @@ def get_watch_status():
     conn = get_db()
     c = conn.cursor()
     
-    # Get instance info
     c.execute("SELECT * FROM oc_instances WHERE id = ?", (instance_id,))
     instance_row = c.fetchone()
     if not instance_row:
         conn.close()
         return jsonify({"error": "Instance not found"}), 404
     
-    # Get status
     c.execute("SELECT * FROM status WHERE instance_id = ?", (instance_id,))
     status_row = c.fetchone()
     
-    # Get recent messages
     c.execute("""
         SELECT * FROM messages WHERE instance_id = ? 
         ORDER BY timestamp DESC LIMIT 5
@@ -712,14 +968,12 @@ def watch_events():
             sse_clients[watch["watch_token"]] = client
         
         try:
-            # Send initial connection event
             yield "data: %s\n\n" % json.dumps({
                 "type": "connected",
                 "instance_id": instance_id,
                 "time": get_timestamp()
             })
             
-            # Send current status if subscribed
             if instance_id:
                 conn = get_db()
                 c = conn.cursor()
@@ -741,7 +995,6 @@ def watch_events():
                         "timestamp": status_row["lastUpdate"]
                     })
             
-            # Keep connection alive, stream events
             while True:
                 if queue:
                     while queue:
@@ -766,13 +1019,11 @@ def watch_events():
     )
 
 # ============================================================
-# Legacy / Compatibility Endpoints (v1)
+# Legacy / Compatibility
 # ============================================================
 
 @app.route("/webhook", methods=["POST"])
 def legacy_webhook():
-    """Legacy single-instance webhook - redirects to instance-based"""
-    # For backward compatibility during migration
     return jsonify({"error": "Use /api/v1/oc/message instead"}), 410
 
 @app.route("/status", methods=["GET"])
@@ -784,16 +1035,32 @@ def legacy_post_status():
     return jsonify({"error": "Use /api/v1/oc/status instead"}), 410
 
 # ============================================================
+# Static UI Pages
+# ============================================================
+
+@app.route("/register")
+def register_page():
+    return send_from_directory("/home/rocky/pebble-relay", "register.html")
+
+@app.route("/admin")
+def admin_page():
+    return send_from_directory("/home/rocky/pebble-relay", "admin.html")
+
+@app.route("/watch-setup")
+def watch_setup_page():
+    return send_from_directory("/home/rocky/pebble-relay", "watch-setup.html")
+
+# ============================================================
 # Start
 # ============================================================
 
 if __name__ == "__main__":
     init_db()
-    print(f"[pebble-relay v2.0.0] Starting on port {PORT}")
+    print(f"[pebble-relay v2.0.0-pb] Starting on port {PORT}")
     print(f"[pebble-relay] Config: {CONFIG_PATH}")
     print(f"[pebble-relay] Database: {DB_PATH}")
+    print(f"[pebble-relay] PocketBase: {PB_URL}")
     if not config.get("admin", {}).get("password_hash"):
-        setup_hint = '{"password": "..."}'
-        print(f"[pebble-relay] First-time setup: POST /api/v1/admin/setup with {setup_hint}")
+        print(f"[pebble-relay] First-time setup: POST /api/v1/admin/setup with {{\"username\":\"admin\",\"password\":\"...\"}}")
         print(f"[pebble-relay] Registration code: {config.get('admin', {}).get('registration_code', 'N/A')}")
     app.run(host="0.0.0.0", port=PORT, debug=config.get("server", {}).get("debug", False), threaded=True)

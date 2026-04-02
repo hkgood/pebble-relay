@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - Pebble Relay</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .header {
+            background: rgba(0,0,0,0.3);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 { font-size: 20px; }
+        .header-right { display: flex; gap: 10px; align-items: center; }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 30px 40px;
+        }
+        .login-box {
+            max-width: 400px;
+            margin: 100px auto;
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 40px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .login-box h2 { text-align: center; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #aaa; font-size: 14px; }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 16px;
+        }
+        input:focus { outline: none; border-color: #4facfe; }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: 700;
+            color: #4facfe;
+        }
+        .stat-card .label {
+            font-size: 13px;
+            color: #888;
+            margin-top: 5px;
+        }
+        .section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .section h3 {
+            margin-bottom: 16px;
+            font-size: 16px;
+            color: #aaa;
+        }
+        .reg-code-box {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .reg-code-box input {
+            flex: 1;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            width: auto;
+            padding: 14px 24px;
+        }
+        .btn-danger {
+            background: rgba(255,82,82,0.2);
+            color: #ff6b6b;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .user-list { margin-top: 16px; }
+        .user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .user-item .name { font-weight: 500; }
+        .user-item .email { font-size: 13px; color: #888; }
+        .user-item .id { font-size: 12px; color: #666; font-family: monospace; }
+        .logout-btn {
+            background: rgba(255,82,82,0.2);
+            color: #ff6b6b;
+            width: auto;
+            padding: 10px 20px;
+            font-size: 14px;
+        }
+        .hidden { display: none !important; }
+        .loading {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,255,136,0.9);
+            color: #000;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+        .toast.show { opacity: 1; }
+        .toast.error { background: rgba(255,82,82,0.9); color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚙️ Pebble Relay 管理后台</h1>
+        <div class="header-right">
+            <span id="adminName" class="hidden"></span>
+            <button id="logoutBtn" class="logout-btn hidden" onclick="logout()">退出</button>
+        </div>
+    </div>
+
+    <!-- Login Form -->
+    <div id="loginSection" class="login-box">
+        <h2>管理员登录</h2>
+        <div class="form-group">
+            <label>用户名</label>
+            <input type="text" id="username" placeholder="管理员用户名">
+        </div>
+        <div class="form-group">
+            <label>密码</label>
+            <input type="password" id="password" placeholder="管理员密码">
+        </div>
+        <button onclick="login()">登录</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboardSection" class="container hidden">
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number" id="statUsers">-</div>
+                <div class="label">用户数</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="statInstances">-</div>
+                <div class="label">实例数</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="statWatches">-</div>
+                <div class="label">手表数</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="statCodes">-</div>
+                <div class="label">注册码</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>🔑 生成注册码</h3>
+            <div class="reg-code-box">
+                <input type="text" id="newRegCode" readonly placeholder="点击按钮生成注册码">
+                <button class="btn-secondary" onclick="generateCode()">生成</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>👥 用户列表</h3>
+            <div id="userList" class="user-list">
+                <p style="color:#666;text-align:center;padding:20px;">加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let adminToken = localStorage.getItem('pebble_admin_token') || '';
+        let relayUrl = localStorage.getItem('pebble_relay_url') || 'http://115.29.162.18:8977';
+
+        function showToast(msg, isError = false) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast' + (isError ? ' error' : '');
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                showToast('请填写用户名和密码', true);
+                return;
+            }
+            
+            try {
+                // Try pebble_admins auth
+                const resp = await fetch(`${relayUrl}/api/collections/pebble_admins/auth-with-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ identity: username, password: password })
+                });
+                
+                if (resp.ok) {
+                    const data = await resp.json();
+                    adminToken = data.token;
+                    localStorage.setItem('pebble_admin_token', adminToken);
+                    localStorage.setItem('pebble_relay_url', relayUrl);
+                    showDashboard();
+                } else {
+                    showToast('登录失败', true);
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, true);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('pebble_admin_token');
+            adminToken = '';
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('dashboardSection').classList.add('hidden');
+            document.getElementById('logoutBtn').classList.add('hidden');
+        }
+
+        async function showDashboard() {
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('dashboardSection').classList.remove('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+            await loadStats();
+            await loadUsers();
+        }
+
+        async function loadStats() {
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/info`, {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    document.getElementById('statUsers').textContent = data.user_count || 0;
+                    document.getElementById('statInstances').textContent = data.instance_count || 0;
+                    document.getElementById('statWatches').textContent = data.watch_count || 0;
+                    document.getElementById('statCodes').textContent = data.registration_code ? '✓' : '-';
+                    if (data.registration_code) {
+                        document.getElementById('newRegCode').value = data.registration_code;
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function loadUsers() {
+            const list = document.getElementById('userList');
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.users && data.users.length) {
+                        list.innerHTML = data.users.map(u => `
+                            <div class="user-item">
+                                <div>
+                                    <div class="name">${u.name || '未命名'}</div>
+                                    <div class="email">${u.email || '-'}</div>
+                                    <div class="id">ID: ${u.id}</div>
+                                </div>
+                                <button class="btn-danger" onclick="deleteUser('${u.id}')">删除</button>
+                            </div>
+                        `).join('');
+                    } else {
+                        list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">暂无用户</p>';
+                    }
+                } else {
+                    list.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:20px;">加载失败</p>';
+                }
+            } catch (e) {
+                list.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:20px;">网络错误</p>';
+            }
+        }
+
+        async function generateCode() {
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/registration-code`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    document.getElementById('newRegCode').value = data.registration_code;
+                    document.getElementById('statCodes').textContent = '✓';
+                    showToast('注册码已生成');
+                } else {
+                    showToast('生成失败', true);
+                }
+            } catch (e) {
+                showToast('网络错误', true);
+            }
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm('确定删除该用户？')) return;
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resp.ok) {
+                    showToast('用户已删除');
+                    await loadUsers();
+                    await loadStats();
+                } else {
+                    showToast('删除失败', true);
+                }
+            } catch (e) {
+                showToast('网络错误', true);
+            }
+        }
+
+        // Auto-login if token exists
+        if (adminToken) {
+            showDashboard();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手表配对 - Pebble Relay</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .header {
+            background: rgba(0,0,0,0.3);
+            padding: 20px 40px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 { font-size: 20px; }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .step {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .step-num {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(79,172,254,0.2);
+            color: #4facfe;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            margin-right: 12px;
+        }
+        .step-num.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #fff;
+        }
+        .step-num.done {
+            background: rgba(0,255,136,0.2);
+            color: #00ff88;
+        }
+        .step-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; color: #aaa; font-size: 14px; }
+        input, select {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 16px;
+        }
+        input:focus, select:focus { outline: none; border-color: #4facfe; }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.secondary {
+            background: rgba(255,255,255,0.1);
+            margin-top: 10px;
+        }
+        .result-box {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 16px;
+            font-family: monospace;
+            font-size: 13px;
+            word-break: break-all;
+        }
+        .result-box .label {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 8px;
+            font-family: sans-serif;
+        }
+        .instance-item {
+            padding: 12px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 1px solid transparent;
+        }
+        .instance-item:hover { background: rgba(255,255,255,0.05); }
+        .instance-item.selected {
+            border-color: #4facfe;
+            background: rgba(79,172,254,0.1);
+        }
+        .instance-item .name { font-weight: 500; }
+        .instance-item .id { font-size: 12px; color: #666; font-family: monospace; }
+        .hidden { display: none; }
+        .tip {
+            text-align: center;
+            font-size: 13px;
+            color: #666;
+            margin-top: 20px;
+        }
+        .tip a { color: #4facfe; text-decoration: none; }
+        .loading {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .success-box {
+            text-align: center;
+            padding: 30px;
+        }
+        .success-box .icon {
+            font-size: 60px;
+            margin-bottom: 16px;
+        }
+        .success-box h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #00ff88;
+        }
+        .success-box p {
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⌚ 手表配对</h1>
+    </div>
+
+    <div class="container">
+        <!-- Step 1: User Token -->
+        <div class="step" id="step1">
+            <div class="step-header">
+                <div class="step-num active" id="step1Num">1</div>
+                <div class="step-title">输入用户 Token</div>
+            </div>
+            <div class="form-group">
+                <label>Pebble Relay 服务器</label>
+                <input type="text" id="relayUrl" value="http://115.29.162.18:8977" placeholder="http://your-server:8977">
+            </div>
+            <div class="form-group">
+                <label>用户 Token（注册时获得）</label>
+                <input type="text" id="userToken" placeholder="请输入您的 user_token">
+            </div>
+            <button id="step1Btn" onclick="validateUser()">验证 & 下一步</button>
+        </div>
+
+        <!-- Step 2: Select Instance -->
+        <div class="step hidden" id="step2">
+            <div class="step-header">
+                <div class="step-num done" id="step2NumDone">✓</div>
+                <div class="step-num active hidden" id="step2Num">2</div>
+                <div class="step-title">选择要订阅的 OpenClaw 实例</div>
+            </div>
+            <div id="instanceList">
+                <p style="color:#888;text-align:center;padding:20px;">加载中...</p>
+            </div>
+            <button id="step2Btn" onclick="bindWatch()" disabled>绑定手表</button>
+        </div>
+
+        <!-- Step 3: Success -->
+        <div class="step hidden" id="step3">
+            <div class="success-box">
+                <div class="icon">✅</div>
+                <h3>配对成功！</h3>
+                <p>请在手表 App 中使用以下 Watch Token：</p>
+                <div class="result-box" style="margin-top:16px;text-align:center;" id="watchTokenDisplay"></div>
+                <p style="margin-top:16px;font-size:12px;color:#666;">请妥善保管此 Token，无法找回</p>
+            </div>
+            <button class="secondary" onclick="reset()">重新配对</button>
+        </div>
+
+        <!-- Instance Binding (new watch token generation) -->
+        <div class="step hidden" id="stepInstance">
+            <div class="step-header">
+                <div class="step-num done">✓</div>
+                <div class="step-num active hidden">2</div>
+                <div class="step-title">手表名称 & 绑定</div>
+            </div>
+            <div class="form-group">
+                <label>手表名称</label>
+                <input type="text" id="watchName" placeholder="例如：Apple Watch">
+            </div>
+            <button id="bindBtn" onclick="doBindWatch()">绑定手表</button>
+        </div>
+    </div>
+
+    <p class="tip">还没有账户？<a href="/register">先注册</a></p>
+
+    <script>
+        let relayUrl = '';
+        let userToken = '';
+        let selectedInstanceId = '';
+        let selectedInstanceName = '';
+        let instances = [];
+        let generatedWatchToken = '';
+
+        async function validateUser() {
+            relayUrl = document.getElementById('relayUrl').value.replace(/\/$/, '');
+            userToken = document.getElementById('userToken').value.trim();
+            
+            if (!userToken) {
+                alert('请输入 user_token');
+                return;
+            }
+            
+            const btn = document.getElementById('step1Btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>验证中...';
+            
+            try {
+                // Get user instances
+                const resp = await fetch(`${relayUrl}/api/v1/oc/${userToken}/instances`, {
+                    headers: { 'X-User-Token': userToken }
+                });
+                
+                if (resp.ok) {
+                    const data = await resp.json();
+                    instances = data.instances || [];
+                    
+                    document.getElementById('step1').classList.add('hidden');
+                    document.getElementById('step2').classList.remove('hidden');
+                    
+                    renderInstanceList();
+                } else {
+                    alert('Token 无效或已过期');
+                }
+            } catch (e) {
+                alert('网络错误：' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '验证 & 下一步';
+            }
+        }
+
+        function renderInstanceList() {
+            const list = document.getElementById('instanceList');
+            const btn = document.getElementById('step2Btn');
+            
+            if (!instances.length) {
+                list.innerHTML = '<p style="color:#888;text-align:center;padding:20px;">暂无实例，请在 OpenClaw 中先注册实例</p>';
+                btn.disabled = true;
+                return;
+            }
+            
+            list.innerHTML = instances.map(inst => `
+                <div class="instance-item" onclick="selectInstance('${inst.id}', '${inst.name}', this)">
+                    <div class="name">${inst.name}</div>
+                    <div class="id">ID: ${inst.id}</div>
+                </div>
+            `).join('');
+            btn.disabled = true;
+        }
+
+        function selectInstance(id, name, el) {
+            selectedInstanceId = id;
+            selectedInstanceName = name;
+            
+            document.querySelectorAll('.instance-item').forEach(item => item.classList.remove('selected'));
+            el.classList.add('selected');
+            
+            document.getElementById('step2Btn').disabled = false;
+        }
+
+        async function bindWatch() {
+            if (!selectedInstanceId) return;
+            
+            // Move to watch name step
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('stepInstance').classList.remove('hidden');
+            document.getElementById('stepInstance').querySelector('.step-num.active').classList.remove('hidden');
+        }
+
+        async function doBindWatch() {
+            const watchName = document.getElementById('watchName').value.trim() || 'Watch';
+            const btn = document.getElementById('bindBtn');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>绑定中...';
+            
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/watch/bind`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': userToken
+                    },
+                    body: JSON.stringify({ name: watchName })
+                });
+                
+                if (resp.ok) {
+                    const data = await resp.json();
+                    generatedWatchToken = data.watch_token;
+                    
+                    // Subscribe to selected instance
+                    await fetch(`${relayUrl}/api/v1/watch/subscribe`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Watch-Token': generatedWatchToken
+                        },
+                        body: JSON.stringify({ instance_id: selectedInstanceId })
+                    });
+                    
+                    // Show success
+                    document.getElementById('stepInstance').classList.add('hidden');
+                    document.getElementById('step3').classList.remove('hidden');
+                    document.getElementById('watchTokenDisplay').textContent = generatedWatchToken;
+                } else {
+                    alert('绑定失败');
+                }
+            } catch (e) {
+                alert('网络错误：' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '绑定手表';
+            }
+        }
+
+        function reset() {
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById('step1').classList.remove('hidden');
+            document.getElementById('userToken').value = '';
+            selectedInstanceId = '';
+            instances = [];
+            generatedWatchToken = '';
+        }
+    </script>
+</body>
+</html>
