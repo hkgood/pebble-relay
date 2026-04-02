@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
-RUN pip install --no-cache-dir flask pyyaml bcrypt
+RUN pip install --no-cache-dir flask pyyaml bcrypt requests
 
 # Copy code and static files
 COPY server.py register.html admin.html watch-setup.html ./
