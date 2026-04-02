@@ -1022,6 +1022,25 @@ def watch_events():
     )
 
 # ============================================================
+# PocketBase Proxy (for UI pages)
+# ============================================================
+
+@app.route("/api/collections/pebble_admins/auth-with-password", methods=["POST"])
+def pb_admin_auth():
+    """Proxy to PocketBase admin auth"""
+    data = request.get_json() or {}
+    try:
+        resp = requests.post(
+            f"{PB_URL}/api/collections/pebble_admins/auth-with-password",
+            json=data,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ============================================================
 # Legacy / Compatibility
 # ============================================================
 
