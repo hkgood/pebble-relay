@@ -277,10 +277,13 @@ def create_user(name: str, user_token: str) -> dict | None:
 
 def validate_registration_code(code: str) -> bool:
     """Check if registration code exists and is unused"""
-    status, data = pb_api_get("pebble_reg_codes", params={"filter": f'code="{code}" AND used=false'})
+    status, data = pb_api_get("pebble_reg_codes", params={"filter": f'code="{code}"'})
     
     if status == 200 and data.get("items"):
-        return True
+        # Filter manually for unused codes
+        for item in data["items"]:
+            if not item.get("used", True):
+                return True
     return False
 
 def mark_reg_code_used(code: str) -> bool:
