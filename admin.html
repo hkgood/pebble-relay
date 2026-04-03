@@ -301,20 +301,7 @@
             </div>
         </div>
 
-        <div id="pbStatusBox" class="info-box" style="background:rgba(255,82,82,0.1);border-color:rgba(255,82,82,0.3);display:none;">
-            <strong style="color:#ff6b6b;">⚠️ PocketBase API Token 未配置</strong><br>
-            当前服务器无法创建用户。需要配置 PocketBase Superuser API Token：<br>
-            1. 登录 PocketBase 管理面板 (<span id="pbUrlDisplay"></span>)<br>
-            2. 进入 <strong>Settings → Authentication → API Tokens</strong><br>
-            3. 创建一个 Superuser API Token<br>
-            4. 在服务器 docker-compose.yml 或环境变量中添加 <code>PB_API_TOKEN</code><br>
-            <br>
-            或者联系开发者获取帮助。
-        </div>
-
-        <div id="pbStatusOk" class="info-box" style="display:none;">
-            ✅ PocketBase 连接正常，用户管理功能可用
-        </div>
+        <div id="dbStatusBox" class="info-box" style="display:none;"></div>
 
         <div class="section">
             <h3>➕ 创建用户 <span class="badge">直接注册</span></h3>
@@ -399,16 +386,13 @@
             document.getElementById('loginSection').classList.add('hidden');
             document.getElementById('dashboardSection').classList.remove('hidden');
             document.getElementById('logoutBtn').classList.remove('hidden');
-            await checkPbStatus();
+            await checkDbStatus();
             await loadStats();
             await loadUsers();
         }
 
-        async function checkPbStatus() {
-            const warnBox = document.getElementById('pbStatusBox');
-            const okBox = document.getElementById('pbStatusOk');
-            const pbUrlDisplay = document.getElementById('pbUrlDisplay');
-            
+        async function checkDbStatus() {
+            const box = document.getElementById('dbStatusBox');
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/check`, {
                     headers: { 'Authorization': `Bearer ${adminToken}` }
@@ -416,22 +400,26 @@
                 
                 if (resp.ok) {
                     const data = await resp.json();
-                    if (pbUrlDisplay) pbUrlDisplay.textContent = data.pb_url || relayUrl;
-                    
-                    if (data.write_ok) {
-                        warnBox.style.display = 'none';
-                        okBox.style.display = 'block';
+                    if (data.db_ok) {
+                        box.style.display = 'block';
+                        box.style.background = 'rgba(0,255,136,0.1)';
+                        box.style.borderColor = 'rgba(0,255,136,0.3)';
+                        box.innerHTML = '✅ 数据库连接正常，用户管理功能可用';
                     } else {
-                        warnBox.style.display = 'block';
-                        okBox.style.display = 'none';
+                        box.style.display = 'block';
+                        box.style.background = 'rgba(255,82,82,0.1)';
+                        box.style.borderColor = 'rgba(255,82,82,0.3)';
+                        box.innerHTML = '⚠️ 数据库错误：' + (data.message || '未知错误');
                     }
                 } else {
-                    warnBox.style.display = 'block';
-                    okBox.style.display = 'none';
+                    box.style.display = 'block';
+                    box.style.background = 'rgba(255,82,82,0.1)';
+                    box.innerHTML = '⚠️ 连接检查失败';
                 }
             } catch (e) {
-                warnBox.style.display = 'block';
-                okBox.style.display = 'none';
+                box.style.display = 'block';
+                box.style.background = 'rgba(255,82,82,0.1)';
+                box.innerHTML = '⚠️ 网络错误';
             }
         }
 
