@@ -34,6 +34,7 @@ PORT = int(os.environ.get("PORT", "8977"))
 PB_URL = os.environ.get("PB_URL", "https://pb.osglab.com")
 PB_ADMIN_EMAIL = os.environ.get("PB_ADMIN_EMAIL", "rocky.hk@gmail.com")
 PB_ADMIN_PASSWORD = os.environ.get("PB_ADMIN_PASSWORD", "gz203799")
+PB_API_TOKEN = os.environ.get("PB_API_TOKEN", "")  # Superuser API token (for collection write ops)
 
 # In-memory cache for PocketBase admin token
 _pb_admin_token = None
@@ -76,6 +77,10 @@ sse_clients_lock = threading.Lock()
 def get_pb_admin_token():
     """Get or refresh PocketBase admin token"""
     global _pb_admin_token, _pb_admin_token_exp
+    
+    # If PB_API_TOKEN (superuser token) is set, use it directly
+    if PB_API_TOKEN:
+        return PB_API_TOKEN
     
     # Check if current token is still valid
     if _pb_admin_token and time.time() < _pb_admin_token_exp - 60:
@@ -592,6 +597,37 @@ def admin_info():
         "watch_count": watch_count,
         "pocketbase_url": PB_URL,
         "uptime": get_timestamp()
+    }), 200
+
+
+@app.route("/api/v1/admin/check", methods=["GET"])
+@require_admin
+def admin_check():
+    """Check PocketBase write access and PB_API_TOKEN status"""
+    pb_url = PB_URL
+    
+    # Test if we can write to pebble_users
+    test_token = secrets.token_urlsafe(8)
+    status, data = pb_api_post("pebble_users", {
+        "name": "__ping_test__",
+        "user_token": test_token
+    })
+    
+    # Clean up test record if created
+    if status in (200, 201) and data.get("id"):
+        pb_api_delete("pebble_users", data["id"])
+        write_ok = True
+    elif status == 403:
+        write_ok = False
+    else:
+        write_ok = False
+    
+    return jsonify({
+        "pb_url": pb_url,
+        "pb_api_token_configured": bool(PB_API_TOKEN),
+        "write_ok": write_ok,
+        "write_error": "403 Forbidden - 需要 PocketBase API Token (superuser权限)" if status == 403 else (data.get("message", "") if status != 201 else ""),
+        "http_status": status
     }), 200
 
 @app.route("/api/v1/admin/registration-code", methods=["POST"])
