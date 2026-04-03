@@ -35,6 +35,8 @@ PB_URL = os.environ.get("PB_URL", "https://pb.osglab.com")
 PB_ADMIN_EMAIL = os.environ.get("PB_ADMIN_EMAIL", "rocky.hk@gmail.com")
 PB_ADMIN_PASSWORD = os.environ.get("PB_ADMIN_PASSWORD", "gz203799")
 PB_API_TOKEN = os.environ.get("PB_API_TOKEN", "")  # Superuser API token (for collection write ops)
+PB_SUPERUSER_EMAIL = os.environ.get("PB_SUPERUSER_EMAIL", "")  # PocketBase Superuser email
+PB_SUPERUSER_PASSWORD = os.environ.get("PB_SUPERUSER_PASSWORD", "")  # PocketBase Superuser password
 
 # In-memory cache for PocketBase admin token
 _pb_admin_token = None
@@ -75,32 +77,40 @@ sse_clients_lock = threading.Lock()
 # ============================================================
 
 def get_pb_admin_token():
-    """Get or refresh PocketBase admin token"""
+    """Get or refresh PocketBase Superuser token
+    
+    Priority:
+    1. PB_API_TOKEN env var (static superuser token)
+    2. PB_SUPERUSER_EMAIL + PB_SUPERUSER_PASSWORD (dynamic superuser login)
+    """
     global _pb_admin_token, _pb_admin_token_exp
     
-    # If PB_API_TOKEN (superuser token) is set, use it directly
+    # If PB_API_TOKEN is set, use it directly (preferred)
     if PB_API_TOKEN:
         return PB_API_TOKEN
     
-    # Check if current token is still valid
+    # Check if cached token is still valid
     if _pb_admin_token and time.time() < _pb_admin_token_exp - 60:
         return _pb_admin_token
     
-    # Refresh token using superuser auth (0.35.x style)
-    try:
-        resp = requests.post(
-            f"{PB_URL}/api/collections/users/auth-with-password",
-            json={"identity": PB_ADMIN_EMAIL, "password": PB_ADMIN_PASSWORD},
-            timeout=10
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            _pb_admin_token = data.get("token", "")
-            # Token typically expires in 24 hours, refresh 1 hour before
-            _pb_admin_token_exp = time.time() + 23 * 3600
-            return _pb_admin_token
-    except Exception as e:
-        print(f"[pb] Failed to get admin token: {e}")
+    # Try PocketBase Superuser auth via /api/admins/auth-with-password
+    if PB_SUPERUSER_EMAIL and PB_SUPERUSER_PASSWORD:
+        try:
+            resp = requests.post(
+                f"{PB_URL}/api/admins/auth-with-password",
+                json={"identity": PB_SUPERUSER_EMAIL, "password": PB_SUPERUSER_PASSWORD},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                _pb_admin_token = data.get("token", "")
+                _pb_admin_token_exp = time.time() + 23 * 3600
+                print(f"[pb] Got new superuser token, expires at {_pb_admin_token_exp}")
+                return _pb_admin_token
+            else:
+                print(f"[pb] Superuser auth failed: {resp.status_code} {resp.text}")
+        except Exception as e:
+            print(f"[pb] Superuser auth error: {e}")
     
     return _pb_admin_token
 
@@ -690,6 +700,20 @@ def list_users():
             user_instances[uid] = []
         user_instances[uid].append({"id": inst["id"], "name": inst["name"]})
     
+    # Get watches per user from local SQLite
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, name, user_id FROM watch_devices")
+    all_watches = c.fetchall()
+    conn.close()
+    
+    user_watches = {}
+    for w in all_watches:
+        uid = w["user_id"]
+        if uid not in user_watches:
+            user_watches[uid] = []
+        user_watches[uid].append({"id": w["id"], "name": w["name"]})
+    
     result = []
     for u in users:
         uid = u["id"]
@@ -707,7 +731,9 @@ def list_users():
             "name": u.get("name", ""),
             "email": u.get("email", ""),
             "created_at": created,
-            "instances": user_instances.get(uid, [])
+            "user_token": u.get("user_token", ""),
+            "instances": user_instances.get(uid, []),
+            "watches": user_watches.get(uid, [])
         })
     
     return jsonify({
