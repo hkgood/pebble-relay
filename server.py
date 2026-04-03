@@ -199,11 +199,20 @@ def get_user_by_relay_token(relay_token: str) -> dict | None:
 # ============================================================
 # Config Init
 # ============================================================
+REL_DEFAULT_PASSWORD = os.environ.get("RELAY_ADMIN_PASSWORD", "123456")
+
 @app.route("/api/v1/admin/setup", methods=["POST"])
 def admin_setup():
     """Set admin password (one-time)"""
     data = request.get_json() or {}
     password = data.get("password", "")
+    # If admin not configured and REL_DEFAULT_PASSWORD env is set, auto-use it
+    if not config.get("admin", {}).get("password_hash"):
+        auto_password = REL_DEFAULT_PASSWORD
+        config["admin"]["password_hash"] = bcrypt.hashpw(auto_password.encode(), bcrypt.gensalt()).decode()
+        save_config()
+        print(f"[pebble-relay] Admin auto-configured with default password: {auto_password}")
+        return jsonify({"ok": True, "message": f"Admin password auto-set to '{auto_password}'"}), 200
     if not password or len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
     if config.get("admin", {}).get("password_hash"):
