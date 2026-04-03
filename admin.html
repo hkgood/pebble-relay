@@ -161,6 +161,27 @@
         .instance-item .inst-name { color: #ccc; }
         .instance-item .inst-id { font-family: monospace; font-size: 11px; color: #555; }
         .no-instances { font-size: 12px; color: #555; padding: 4px 0; }
+        .user-stats-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .stat-badge {
+            font-size: 11px;
+            background: rgba(255,255,255,0.08);
+            padding: 3px 8px;
+            border-radius: 6px;
+            color: #888;
+        }
+        .token-badge {
+            cursor: pointer;
+            font-family: monospace;
+            color: #4facfe;
+        }
+        .token-badge:hover {
+            background: rgba(79,172,254,0.15);
+        }
         .token-display {
             background: rgba(0,255,136,0.1);
             border: 1px solid rgba(0,255,136,0.3);
@@ -484,6 +505,10 @@
                     if (data.users && data.users.length) {
                         list.innerHTML = data.users.map(u => {
                             const instances = u.instances || [];
+                            const watches = u.watches || [];
+                            const token = u.user_token || '';
+                            const maskedToken = token ? token.substring(0, 8) + '****' + token.substring(token.length - 4) : '-';
+                            
                             const instHtml = instances.length 
                                 ? instances.map(i => `
                                     <div class="instance-item">
@@ -505,8 +530,13 @@
                                             <button class="btn-danger btn-sm" onclick="deleteUser('${u.id}')">删除</button>
                                         </div>
                                     </div>
+                                    <div class="user-stats-row">
+                                        <span class="stat-badge">实例: ${instances.length}</span>
+                                        <span class="stat-badge">手表: ${watches.length}</span>
+                                        <span class="stat-badge token-badge" onclick="showFullToken('${token}', '${u.name}')" title="点击查看完整Token">Token: ${maskedToken}</span>
+                                    </div>
                                     <div class="instance-list">
-                                        <div style="font-size:11px;color:#555;margin-bottom:4px;">实例 (${instances.length})</div>
+                                        <div style="font-size:11px;color:#555;margin-bottom:4px;">实例</div>
                                         ${instHtml}
                                     </div>
                                 </div>
@@ -521,6 +551,10 @@
             } catch (e) {
                 list.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:20px;">网络错误</p>';
             }
+        }
+
+        function showFullToken(token, name) {
+            prompt(`用户「${name}」的完整 Token（请复制后妥善保管，刷新页面后需重新查看）：`, token);
         }
 
         async function deleteUser(userId) {
