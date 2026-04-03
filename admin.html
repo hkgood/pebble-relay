@@ -270,12 +270,8 @@
     <div id="loginSection" class="login-box">
         <h2>管理员登录</h2>
         <div class="form-group">
-            <label>管理员邮箱</label>
-            <input type="text" id="username" placeholder="pebble_relay@admin.com" value="rocky.hk@gmail.com">
-        </div>
-        <div class="form-group">
-            <label>密码</label>
-            <input type="password" id="password" placeholder="管理员密码">
+            <label>管理员密码</label>
+            <input type="password" id="password" placeholder="管理员密码（至少8位）" onkeypress="if(event.key==='Enter')login()">
         </div>
         <button class="btn-primary" onclick="login()">登录</button>
     </div>
@@ -330,7 +326,7 @@
     <div id="toast" class="toast"></div>
 
     <script>
-        let adminToken = localStorage.getItem('pebble_admin_token') || '';
+        let adminPassword = localStorage.getItem('pebble_admin_password') || '';
         let relayUrl = localStorage.getItem('pebble_relay_url') || 'http://115.29.162.18:8977';
 
         document.getElementById('serverUrl').textContent = relayUrl;
@@ -344,25 +340,22 @@
         }
 
         async function login() {
-            const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
             
-            if (!username || !password) {
-                showToast('请填写用户名和密码', true);
+            if (!password) {
+                showToast('请填写管理员密码', true);
                 return;
             }
             
+            // Verify password by calling admin info endpoint with X-Admin-Password header
             try {
-                const resp = await fetch(`${relayUrl}/api/collections/pebble_admins/auth-with-password`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ identity: username, password: password })
+                const resp = await fetch(`${relayUrl}/api/v1/admin/info`, {
+                    headers: { 'X-Admin-Password': password }
                 });
                 
                 if (resp.ok) {
-                    const data = await resp.json();
-                    adminToken = data.token;
-                    localStorage.setItem('pebble_admin_token', adminToken);
+                    adminPassword = password;
+                    localStorage.setItem('pebble_admin_password', password);
                     localStorage.setItem('pebble_relay_url', relayUrl);
                     showDashboard();
                 } else {
@@ -374,8 +367,8 @@
         }
 
         function logout() {
-            localStorage.removeItem('pebble_admin_token');
-            adminToken = '';
+            localStorage.removeItem('pebble_admin_password');
+            adminPassword = '';
             document.getElementById('loginSection').classList.remove('hidden');
             document.getElementById('dashboardSection').classList.add('hidden');
             document.getElementById('logoutBtn').classList.add('hidden');
@@ -395,7 +388,7 @@
             const box = document.getElementById('dbStatusBox');
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/check`, {
-                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                    headers: { 'X-Admin-Password': adminPassword }
                 });
                 
                 if (resp.ok) {
@@ -426,7 +419,7 @@
         async function loadStats() {
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/info`, {
-                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                    headers: { 'X-Admin-Password': adminPassword }
                 });
                 if (resp.ok) {
                     const data = await resp.json();
@@ -455,7 +448,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${adminToken}`
+                        'X-Admin-Password': adminPassword
                     },
                     body: JSON.stringify({ name: name })
                 });
@@ -484,7 +477,7 @@
             const list = document.getElementById('userList');
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
-                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                    headers: { 'X-Admin-Password': adminPassword }
                 });
                 if (resp.ok) {
                     const data = await resp.json();
@@ -550,7 +543,7 @@
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/users/${userId}`, {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                    headers: { 'X-Admin-Password': adminPassword }
                 });
                 if (resp.ok) {
                     showToast('用户已删除');
@@ -566,7 +559,7 @@
         }
 
         // Auto-login if token exists
-        if (adminToken) {
+        if (adminPassword) {
             showDashboard();
         }
     </script>
