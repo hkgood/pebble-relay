@@ -1,7 +1,7 @@
 """
 pebble-relay v2.0-pb
 Multi-user relay server for OpenClaw <-> Smartwatch
-Uses PocketBase for account management (pebble_users, pebble_reg_codes, pebble_admins collections)
+Uses local SQLite for user data, PocketBase for admin authentication only
 """
 
 import os
@@ -459,7 +459,7 @@ def require_watch_token(f):
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Check header-based admin auth
+        # Check X-Admin-Password header
         password = request.headers.get("X-Admin-Password", "")
         stored_hash = config.get("admin", {}).get("password_hash", "")
         
@@ -470,32 +470,8 @@ def require_admin(f):
             except:
                 pass
         
-        # Check pebble_admins Bearer token
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            try:
-                # Verify by decoding JWT payload (base64 decode, no verify)
-                import base64, json as json_lib
-                parts = token.split(".")
-                if len(parts) >= 2:
-                    payload = parts[1]
-                    # Add padding if needed
-                    padding = 4 - len(payload) % 4
-                    if padding != 4:
-                        payload += "=" * padding
-                    claims = json_lib.loads(base64.urlsafe_b64decode(payload))
-                    # Check expiration
-                    if claims.get("exp", 0) > time.time():
-                        # Valid token, extract admin id
-                        admin_id = claims.get("id", "")
-                        if admin_id:
-                            request.admin_id = admin_id
-                            return f(*args, **kwargs)
-            except:
-                pass
-        
         return jsonify({"error": "Unauthorized"}), 401
+    return decorated
     return decorated
 
 # ============================================================
@@ -552,35 +528,26 @@ def health():
 
 @app.route("/api/v1/admin/setup", methods=["POST"])
 def admin_setup():
-    """First-time admin setup - creates admin in pebble_admins collection"""
+    """First-time admin setup - set admin password locally"""
     data = request.get_json() or {}
-    username = data.get("username", "")
     password = data.get("password", "")
     
     stored_hash = config.get("admin", {}).get("password_hash", "")
     if stored_hash:
         return jsonify({"error": "Admin already configured"}), 400
     
-    if len(password) < 8:
+    if not password or len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
     
     # Set local config password hash
     config["admin"]["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    
-    # Also create in PocketBase pebble_admins
-    if username:
-        setup_admin(username, password)
-    
-    # Generate first registration code
-    first_code = generate_registration_code()
     
     with open(CONFIG_PATH, 'w') as f:
         yaml.dump(config, f)
     
     return jsonify({
         "ok": True, 
-        "message": "Admin password set",
-        "first_registration_code": first_code
+        "message": "Admin password set successfully"
     }), 200
 
 @app.route("/api/v1/admin/info", methods=["GET"])
@@ -718,36 +685,13 @@ def delete_user_api(user_id):
     return jsonify({"error": "Failed to delete user"}), 500
 
 # ============================================================
-# User Registration
+# User Registration (disabled - users are created by admin only)
 # ============================================================
 
 @app.route("/api/v1/register", methods=["POST"])
 def register_user():
-    """Register a new user (requires valid registration code from PocketBase)"""
-    data = request.get_json() or {}
-    code = data.get("registration_code", "")
-    name = data.get("name", "")
-    
-    # Validate registration code against PocketBase
-    if not validate_registration_code(code):
-        return jsonify({"error": "Invalid or used registration code"}), 401
-    
-    user_token = secrets.token_urlsafe(32)
-    
-    # Create user in PocketBase
-    user = create_user(name, user_token)
-    if not user:
-        return jsonify({"error": "Failed to create user"}), 500
-    
-    # Mark registration code as used
-    mark_reg_code_used(code)
-    
-    return jsonify({
-        "ok": True,
-        "user_id": user["id"],
-        "user_token": user_token,
-        "message": "Save this token securely - it cannot be recovered"
-    }), 201
+    """Register a new user (disabled - use admin API to create users)"""
+    return jsonify({"error": "User self-registration is disabled. Please ask admin to create a user."}), 403
 
 # ============================================================
 # OpenClaw Instance Management (local SQLite)
@@ -1174,6 +1118,5 @@ if __name__ == "__main__":
     print(f"[pebble-relay] Database: {DB_PATH}")
     print(f"[pebble-relay] PocketBase: {PB_URL}")
     if not config.get("admin", {}).get("password_hash"):
-        print(f"[pebble-relay] First-time setup: POST /api/v1/admin/setup with {{\"username\":\"admin\",\"password\":\"...\"}}")
-        print(f"[pebble-relay] Registration code: {config.get('admin', {}).get('registration_code', 'N/A')}")
+        print(f"[pebble-relay] First-time setup: POST /api/v1/admin/setup with {{\"password\":\"your_password\"}}")
     app.run(host="0.0.0.0", port=PORT, debug=config.get("server", {}).get("debug", False), threaded=True)
