@@ -265,20 +265,39 @@ def get_user_by_id(user_id: str) -> dict | None:
     return None
 
 def create_user(name: str, user_token: str) -> dict | None:
-    """Create a new user in pebble_users collection"""
+    """Create a new user in pebble_users collection
+    
+    user_token field may not be settable on POST due to PocketBase field rules,
+    so we create first then PATCH to set the token.
+    """
+    # Step 1: create user with name only
     status, data = pb_api_post("pebble_users", {
-        "name": name,
-        "user_token": user_token
+        "name": name
     })
     
-    if status in (200, 201):
-        return {
-            "id": data["id"],
-            "name": name,
-            "user_token": user_token
-        }
-    print(f"[pb] create_user failed: {status} {data}")
-    return None
+    if status not in (200, 201):
+        print(f"[pb] create_user (step1) failed: {status} {data}")
+        return None
+    
+    user_id = data.get("id")
+    if not user_id:
+        print(f"[pb] create_user: no id returned")
+        return None
+    
+    # Step 2: PATCH to set user_token (POST may not store this field)
+    patch_status, patch_data = pb_api_post("pebble_users", {
+        "user_token": user_token
+    }, record_id=user_id)
+    
+    if patch_status not in (200, 201):
+        print(f"[pb] create_user (step2 set token) failed: {patch_status} {patch_data}")
+        # User was created but token not set - still return partial result
+    
+    return {
+        "id": user_id,
+        "name": name,
+        "user_token": user_token
+    }
 
 def validate_registration_code(code: str) -> bool:
     """Check if registration code exists and is unused"""
