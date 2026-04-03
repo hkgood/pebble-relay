@@ -12,6 +12,8 @@ services:
       - PB_ADMIN_EMAIL=rocky.hk@gmail.com
       - PB_ADMIN_PASSWORD=gz203799
       - PB_API_TOKEN=${PB_API_TOKEN:-}
+      - PB_SUPERUSER_EMAIL=${PB_SUPERUSER_EMAIL:-}
+      - PB_SUPERUSER_PASSWORD=${PB_SUPERUSER_PASSWORD:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8977/health')"]
