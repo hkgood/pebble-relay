@@ -1,249 +1,118 @@
 """
-pebble-relay v2.0-pb
+pebble-relay v2.1
 Multi-user relay server for OpenClaw <-> Smartwatch
-Uses local SQLite for user data, PocketBase for admin authentication only
+Uses PocketBase for all data storage: relay_users, oc_instances, watch_devices, relay_status, relay_messages
 """
-
-import os
-import sqlite3
-import uuid
-import time
-import json
-import secrets
-import threading
-import hashlib
-import bcrypt
-import requests
+import os, secrets, time, sqlite3, yaml, re
 from datetime import datetime
-from pathlib import Path
 from functools import wraps
-from flask import Flask, request, jsonify, Response, stream_with_context, send_from_directory
-import yaml
+from flask import Flask, request, jsonify, Response
+import bcrypt, requests
 
 app = Flask(__name__)
 
 # ============================================================
 # Configuration
 # ============================================================
-
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/data/config.yaml")
-DB_PATH = os.environ.get("DB_PATH", "/data/relay.db")
-PORT = int(os.environ.get("PORT", "8977"))
-
-# PocketBase configuration
 PB_URL = os.environ.get("PB_URL", "https://pb.osglab.com")
-PB_ADMIN_EMAIL = os.environ.get("PB_ADMIN_EMAIL", "rocky.hk@gmail.com")
-PB_ADMIN_PASSWORD = os.environ.get("PB_ADMIN_PASSWORD", "gz203799")
-PB_API_TOKEN = os.environ.get("PB_API_TOKEN", "")  # Superuser API token (for collection write ops)
-PB_SUPERUSER_EMAIL = os.environ.get("PB_SUPERUSER_EMAIL", "")  # PocketBase Superuser email
-PB_SUPERUSER_PASSWORD = os.environ.get("PB_SUPERUSER_PASSWORD", "")  # PocketBase Superuser password
+PB_SUPERUSER_EMAIL = os.environ.get("PB_SUPERUSER_EMAIL", "rocky.hk@gmail.com")
+PB_SUPERUSER_PASSWORD = os.environ.get("PB_SUPERUSER_PASSWORD", "gz203799")
 
-# In-memory cache for PocketBase admin token
+config = {}
 _pb_admin_token = None
 _pb_admin_token_exp = 0
 
-def load_config():
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, 'r') as f:
-            return yaml.safe_load(f)
-    return {
-        "server": {
-            "port": PORT,
-            "debug": False
-        },
-        "admin": {
-            "password_hash": "",
-            "registration_code": secrets.token_hex(8)
-        },
-        "limits": {
-            "message_retention_days": 7,
-            "max_messages_per_instance": 200
-        },
-        "pocketbase": {
-            "url": PB_URL,
-            "admin_email": PB_ADMIN_EMAIL,
-            "admin_password": PB_ADMIN_PASSWORD
-        }
-    }
-
-config = load_config()
-
-# In-memory SSE clients: {watch_token: {"queue": [], "instance_id": None}}
-sse_clients = {}
-sse_clients_lock = threading.Lock()
-
 # ============================================================
-# PocketBase API Helpers
+# PocketBase Helpers
 # ============================================================
-
-def get_pb_admin_token():
-    """Get or refresh PocketBase Superuser token
-    
-    Priority:
-    1. PB_API_TOKEN env var (static superuser token)
-    2. PB_SUPERUSER_EMAIL + PB_SUPERUSER_PASSWORD (dynamic superuser login)
-    """
+def _get_admin_token():
+    """Get or refresh PocketBase superuser token"""
     global _pb_admin_token, _pb_admin_token_exp
-    
-    # If PB_API_TOKEN is set, use it directly (preferred)
-    if PB_API_TOKEN:
-        return PB_API_TOKEN
-    
-    # Check if cached token is still valid
     if _pb_admin_token and time.time() < _pb_admin_token_exp - 60:
         return _pb_admin_token
-    
-    # Try PocketBase Superuser auth via /api/admins/auth-with-password
-    if PB_SUPERUSER_EMAIL and PB_SUPERUSER_PASSWORD:
-        try:
-            resp = requests.post(
-                f"{PB_URL}/api/admins/auth-with-password",
-                json={"identity": PB_SUPERUSER_EMAIL, "password": PB_SUPERUSER_PASSWORD},
-                timeout=10
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                _pb_admin_token = data.get("token", "")
-                _pb_admin_token_exp = time.time() + 23 * 3600
-                print(f"[pb] Got new superuser token, expires at {_pb_admin_token_exp}")
-                return _pb_admin_token
-            else:
-                print(f"[pb] Superuser auth failed: {resp.status_code} {resp.text}")
-        except Exception as e:
-            print(f"[pb] Superuser auth error: {e}")
-    
-    return _pb_admin_token
-
-def pb_api_get(collection, record_id=None, params=None):
-    """GET request to PocketBase API"""
-    token = get_pb_admin_token()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    
-    if record_id:
-        url = f"{PB_URL}/api/collections/{collection}/records/{record_id}"
-    else:
-        url = f"{PB_URL}/api/collections/{collection}/records"
-    
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        resp = requests.post(
+            f"{PB_URL}/api/collections/_superusers/auth-with-password",
+            json={"identity": PB_SUPERUSER_EMAIL, "password": PB_SUPERUSER_PASSWORD},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            _pb_admin_token = data.get("token", "")
+            _pb_admin_token_exp = time.time() + 23 * 3600
+            return _pb_admin_token
+        else:
+            print(f"[pb] auth failed: {resp.status_code} {resp.text[:100]}")
+    except Exception as e:
+        print(f"[pb] auth error: {e}")
+    return None
+
+def pb_headers(token=None):
+    """Return headers dict for PocketBase API calls"""
+    t = token or _get_admin_token()
+    return {
+        "Authorization": f"Bearer {t}",
+        "Content-Type": "application/json"
+    }
+
+def pb_get(collection, record_id=None, params=None):
+    """GET from PocketBase collection"""
+    token = _get_admin_token()
+    if not token:
+        return None, None
+    url = f"{PB_URL}/api/collections/{collection}/records"
+    if record_id:
+        url += f"/{record_id}"
+    if params:
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        url += f"?{qs}"
+    try:
+        resp = requests.get(url, headers=pb_headers(token), timeout=10)
         return resp.status_code, resp.json()
     except Exception as e:
-        return 500, {"error": str(e)}
+        return None, {"error": str(e)}
 
-def pb_api_post(collection, data, record_id=None):
-    """POST request to PocketBase API"""
-    token = get_pb_admin_token()
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    
+def pb_post(collection, data, record_id=None):
+    """POST or PATCH to PocketBase collection"""
+    token = _get_admin_token()
+    if not token:
+        return None, {"error": "no token"}
+    url = f"{PB_URL}/api/collections/{collection}/records"
     if record_id:
-        url = f"{PB_URL}/api/collections/{collection}/records/{record_id}"
-        try:
-            resp = requests.patch(url, headers=headers, json=data, timeout=10)
-            return resp.status_code, resp.json()
-        except Exception as e:
-            return 500, {"error": str(e)}
-    else:
-        url = f"{PB_URL}/api/collections/{collection}/records"
-        try:
-            resp = requests.post(url, headers=headers, json=data, timeout=10)
-            return resp.status_code, resp.json()
-        except Exception as e:
-            return 500, {"error": str(e)}
-
-def pb_api_delete(collection, record_id):
-    """DELETE request to PocketBase API"""
-    token = get_pb_admin_token()
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    url = f"{PB_URL}/api/collections/{collection}/records/{record_id}"
+        url += f"/{record_id}"
     try:
-        resp = requests.delete(url, headers=headers, timeout=10)
+        resp = requests.request(
+            "PATCH" if record_id else "POST",
+            url, headers=pb_headers(token), json=data, timeout=10
+        )
+        return resp.status_code, resp.json()
+    except Exception as e:
+        return None, {"error": str(e)}
+
+def pb_delete(collection, record_id):
+    """DELETE from PocketBase collection"""
+    token = _get_admin_token()
+    if not token:
+        return None, {"error": "no token"}
+    try:
+        resp = requests.delete(
+            f"{PB_URL}/api/collections/{collection}/records/{record_id}",
+            headers=pb_headers(token), timeout=10
+        )
         return resp.status_code, resp.json() if resp.content else {}
     except Exception as e:
-        return 500, {"error": str(e)}
+        return None, {"error": str(e)}
 
-# ============================================================
-# Database (Local - for relay data only, not users)
-# ============================================================
-
-def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # oc_instances - OpenClaw instances per user
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS oc_instances (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            instance_token_hash TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        )
-    """)
-    
-    # pebble_users - Users (stored locally, not in PocketBase)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS pebble_users (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            user_token_hash TEXT NOT NULL,
-            user_token TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        )
-    """)
-    
-    # watch_devices - Watch devices per user
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS watch_devices (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            watch_token_hash TEXT NOT NULL,
-            current_instance_id TEXT,
-            created_at INTEGER NOT NULL,
-            FOREIGN KEY (current_instance_id) REFERENCES oc_instances(id)
-        )
-    """)
-    
-    # messages - Messages per instance
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id TEXT PRIMARY KEY,
-            instance_id TEXT NOT NULL,
-            type TEXT NOT NULL,
-            content TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            sender TEXT DEFAULT '',
-            timestamp INTEGER NOT NULL,
-            read INTEGER DEFAULT 0,
-            FOREIGN KEY (instance_id) REFERENCES oc_instances(id)
-        )
-    """)
-    
-    # status - Status snapshots per instance
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS status (
-            instance_id TEXT PRIMARY KEY,
-            ok INTEGER DEFAULT 1,
-            thinking INTEGER DEFAULT 0,
-            uptime INTEGER DEFAULT 0,
-            channels TEXT DEFAULT '[]',
-            memory INTEGER DEFAULT 0,
-            cpu INTEGER DEFAULT 0,
-            last_message_ago INTEGER DEFAULT 0,
-            lastUpdate INTEGER NOT NULL,
-            FOREIGN KEY (instance_id) REFERENCES oc_instances(id)
-        )
-    """)
-    
-    conn.commit()
-    conn.close()
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def pb_upsert(collection, filter_query, data):
+    """Upsert: find by filter, update if exists, create if not"""
+    filter_enc = requests.utils.quote(filter_query)
+    status, result = pb_get(collection, params={"filter": filter_enc, "perPage": 1})
+    if status == 200 and result.get("items"):
+        record_id = result["items"][0]["id"]
+        return pb_post(collection, data, record_id)
+    else:
+        return pb_post(collection, data)
 
 def hash_token(token: str) -> str:
     return bcrypt.hashpw(token.encode(), bcrypt.gensalt()).decode()
@@ -255,868 +124,523 @@ def verify_token(token: str, hashed: str) -> bool:
         return False
 
 # ============================================================
-
+# Load config
 # ============================================================
-# User Management via SQLite (local, no PocketBase needed)
-# ============================================================
-
-def get_user_by_token(user_token: str) -> dict | None:
-    """Find user by user_token in local SQLite"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, user_token_hash, created_at FROM pebble_users WHERE user_token = ?", (user_token,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "created_at": row["created_at"]
-        }
-    return None
-
-def get_user_by_id(user_id: str) -> dict | None:
-    """Find user by ID in local SQLite"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, user_token_hash, user_token, created_at FROM pebble_users WHERE id = ?", (user_id,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "created_at": row["created_at"]
-        }
-    return None
-
-def create_user(name: str, user_token: str) -> dict | None:
-    """Create a new user in local SQLite"""
-    user_id = secrets.token_urlsafe(8)
-    token_hash = hash_token(user_token)
-    created_at = int(time.time())
-    
-    conn = get_db()
-    c = conn.cursor()
+def load_config():
+    global config
     try:
-        c.execute(
-            "INSERT INTO pebble_users (id, name, user_token_hash, user_token, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, name, token_hash, user_token, created_at)
-        )
-        conn.commit()
-        conn.close()
-        return {
-            "id": user_id,
-            "name": name,
-            "user_token": user_token
-        }
-    except Exception as e:
-        conn.close()
-        print(f"[sqlite] create_user failed: {e}")
-        return None
+        with open(CONFIG_PATH) as f:
+            config = yaml.safe_load(f) or {}
+    except:
+        config = {}
+    if "admin" not in config:
+        config["admin"] = {}
+    if "relay_tokens" not in config:
+        config["relay_tokens"] = {}  # map: relay_token_hash -> user_id (for fast lookup)
 
-def get_user_count() -> int:
-    """Get total user count from SQLite"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) as cnt FROM pebble_users")
-    count = c.fetchone()["cnt"]
-    conn.close()
-    return count
+def save_config():
+    with open(CONFIG_PATH, "w") as f:
+        yaml.dump(config, f)
 
-def get_all_users() -> list:
-    """Get all users from SQLite"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, user_token, user_token_hash, created_at FROM pebble_users ORDER BY created_at DESC")
-    rows = c.fetchall()
-    conn.close()
-    return rows
-
-def delete_user(user_id: str) -> bool:
-    """Delete a user from SQLite"""
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM pebble_users WHERE id = ?", (user_id,))
-    affected = c.rowcount
-    conn.commit()
-    conn.close()
-    return affected > 0
+load_config()
 
 # ============================================================
-# Admin Management via PocketBase (pebble_admins collection)
+# Admin Auth
 # ============================================================
-
-def setup_admin(username: str, password: str) -> bool:
-    """Setup admin user in pebble_admins collection"""
-    status, data = pb_api_post("pebble_admins", {
-        "username": username,
-        "password": password,
-        "passwordConfirm": password,
-        "name": "Admin"
-    })
-    
-    # 400 might mean already exists
-    if status in (200, 201, 400):
-        return True
-    print(f"[pb] setup_admin failed: {status} {data}")
-    return False
-
-def verify_admin(username: str, password: str) -> dict | None:
-    """Verify admin credentials against pebble_admins"""
-    try:
-        resp = requests.post(
-            f"{PB_URL}/api/collections/pebble_admins/auth-with-password",
-            json={"identity": username, "password": password},
-            timeout=10
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return {
-                "id": data["record"]["id"],
-                "username": data["record"]["username"],
-                "token": data.get("token", "")
-            }
-    except Exception as e:
-        print(f"[pb] verify_admin error: {e}")
-    return None
-
-# ============================================================
-# Local instance/watch lookup (still uses local SQLite)
-# ============================================================
-
-def get_instance_by_token(instance_token: str) -> dict | None:
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM oc_instances")
-    for row in c.fetchall():
-        if verify_token(instance_token, row['instance_token_hash']):
-            conn.close()
-            return dict(row)
-    conn.close()
-    return None
-
-def get_watch_by_token(watch_token: str) -> dict | None:
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM watch_devices")
-    for row in c.fetchall():
-        if verify_token(watch_token, row['watch_token_hash']):
-            conn.close()
-            return dict(row)
-    conn.close()
-    return None
-
-# ============================================================
-# Auth decorators
-# ============================================================
-
-def require_instance_token(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get("X-Instance-Token", "")
-        if not token:
-            return jsonify({"error": "Missing X-Instance-Token"}), 401
-        
-        instance = get_instance_by_token(token)
-        if not instance:
-            return jsonify({"error": "Invalid instance token"}), 401
-        
-        request.instance = instance
-        return f(*args, **kwargs)
-    return decorated
-
-def require_user_token(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get("X-User-Token", "")
-        if not token:
-            return jsonify({"error": "Missing X-User-Token"}), 401
-        
-        user = get_user_by_token(token)
-        if not user:
-            return jsonify({"error": "Invalid user token"}), 401
-        
-        request.user = user
-        return f(*args, **kwargs)
-    return decorated
-
-def require_watch_token(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get("X-Watch-Token", "")
-        if not token:
-            return jsonify({"error": "Missing X-Watch-Token"}), 401
-        
-        watch = get_watch_by_token(token)
-        if not watch:
-            return jsonify({"error": "Invalid watch token"}), 401
-        
-        request.watch = watch
-        return f(*args, **kwargs)
-    return decorated
-
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Check X-Admin-Password header
-        password = request.headers.get("X-Admin-Password", "")
-        stored_hash = config.get("admin", {}).get("password_hash", "")
-        
-        if stored_hash and password:
+        token = request.headers.get("X-Admin-Token", "")
+        stored = config.get("admin", {}).get("password_hash", "")
+        if stored and token:
             try:
-                if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+                if bcrypt.checkpw(token.encode(), stored.encode()):
                     return f(*args, **kwargs)
             except:
                 pass
-        
         return jsonify({"error": "Unauthorized"}), 401
     return decorated
-    return decorated
 
 # ============================================================
-# Helpers
+# User Token Auth (relay_token in relay_users collection)
 # ============================================================
-
-def get_timestamp():
-    return int(time.time())
-
-def cleanup_old_messages(instance_id: str):
-    """Auto-cleanup old messages per instance"""
-    limits = config.get("limits", {})
-    max_days = limits.get("message_retention_days", 7)
-    max_msgs = limits.get("max_messages_per_instance", 200)
+def get_user_by_relay_token(relay_token: str) -> dict | None:
+    """Find user by relay_token in relay_users, using local cache for speed"""
+    # Fast path: check local cache
+    token_hash = bcrypt.hashpw(relay_token.encode(), bcrypt.gensalt()).decode()[:60]
+    # Try to find in local config cache
+    for th, uid in config.get("relay_tokens", {}).items():
+        try:
+            if bcrypt.checkpw(relay_token.encode(), th.encode()):
+                # Found in cache, get full record
+                status, data = pb_get("relay_users", params={"filter": f'id="{uid}"'})
+                if status == 200 and data.get("items"):
+                    return data["items"][0]
+        except:
+            pass
     
-    conn = get_db()
-    c = conn.cursor()
-    cutoff = get_timestamp() - (max_days * 86400)
-    
-    c.execute("DELETE FROM messages WHERE instance_id = ? AND timestamp < ?", (instance_id, cutoff))
-    
-    c.execute("""
-        DELETE FROM messages WHERE instance_id = ? AND id NOT IN (
-            SELECT id FROM messages WHERE instance_id = ? ORDER BY timestamp DESC LIMIT ?
-        )
-    """, (instance_id, instance_id, max_msgs))
-    
-    conn.commit()
-    conn.close()
-
-def notify_watch_sse(instance_id: str, event_data: dict):
-    """Broadcast event to all watches subscribed to this instance"""
-    with sse_clients_lock:
-        for watch_token, client in list(sse_clients.items()):
-            try:
-                if client.get("instance_id") == instance_id:
-                    client["queue"].put(json.dumps(event_data))
-            except:
-                pass
+    # Slow path: search PocketBase
+    filter_enc = requests.utils.quote(f'relay_token="{relay_token}"')
+    status, data = pb_get("relay_users", params={"filter": filter_enc})
+    if status == 200 and data.get("items"):
+        user = data["items"][0]
+        # Cache it
+        if "relay_tokens" not in config:
+            config["relay_tokens"] = {}
+        try:
+            hashed = bcrypt.hashpw(relay_token.encode(), bcrypt.gensalt()).decode()
+            config["relay_tokens"][hashed] = user["id"]
+            save_config()
+        except:
+            pass
+        return user
+    return None
 
 # ============================================================
-# Health & Admin
+# Config Init
 # ============================================================
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({
-        "ok": True, 
-        "service": "pebble-relay", 
-        "version": "2.0.0-pb", 
-        "pocketbase": PB_URL,
-        "time": get_timestamp()
-    }), 200
-
 @app.route("/api/v1/admin/setup", methods=["POST"])
 def admin_setup():
-    """First-time admin setup - set admin password locally"""
+    """Set admin password (one-time)"""
     data = request.get_json() or {}
     password = data.get("password", "")
-    
-    stored_hash = config.get("admin", {}).get("password_hash", "")
-    if stored_hash:
-        return jsonify({"error": "Admin already configured"}), 400
-    
     if not password or len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
-    
-    # Set local config password hash
+    if config.get("admin", {}).get("password_hash"):
+        return jsonify({"error": "Admin already configured"}), 400
     config["admin"]["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    
-    with open(CONFIG_PATH, 'w') as f:
-        yaml.dump(config, f)
-    
-    return jsonify({
-        "ok": True, 
-        "message": "Admin password set successfully"
-    }), 200
+    save_config()
+    return jsonify({"ok": True, "message": "Admin password set"}), 200
 
-@app.route("/api/v1/admin/info", methods=["GET"])
+# ============================================================
+# Health
+# ============================================================
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "version": "2.1", "timestamp": int(time.time())})
+
+# ============================================================
+# Admin API
+# ============================================================
+@app.route("/api/v1/admin/info")
 @require_admin
 def admin_info():
-    """Get server info"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    c.execute("SELECT COUNT(*) as cnt FROM oc_instances")
-    instance_count = c.fetchone()["cnt"]
-    
-    c.execute("SELECT COUNT(*) as cnt FROM watch_devices")
-    watch_count = c.fetchone()["cnt"]
-    
-    conn.close()
-    
-    user_count = get_user_count()
-    
+    """Get server stats"""
+    # Count users
+    _, users = pb_get("relay_users")
+    user_count = len(users.get("items", [])) if users else 0
+    _, instances = pb_get("oc_instances")
+    instance_count = len(instances.get("items", [])) if instances else 0
+    _, watches = pb_get("watch_devices")
+    watch_count = len(watches.get("items", [])) if watches else 0
     return jsonify({
         "user_count": user_count,
         "instance_count": instance_count,
         "watch_count": watch_count,
-        "pocketbase_url": PB_URL,
-        "uptime": get_timestamp()
+        "pocketbase_url": PB_URL
     }), 200
 
-
-@app.route("/api/v1/admin/check", methods=["GET"])
+@app.route("/api/v1/admin/check")
 @require_admin
 def admin_check():
-    """Check SQLite connectivity"""
-    try:
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM pebble_users")
-        c.execute("SELECT COUNT(*) FROM oc_instances")
-        conn.close()
-        return jsonify({
-            "db_ok": True,
-            "message": "SQLite connected, user management via local database"
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "db_ok": False,
-            "message": str(e)
-        }), 500
-
+    token = _get_admin_token()
+    return jsonify({"ok": bool(token), "pb_connected": bool(token)}), 200
 
 @app.route("/api/v1/admin/users", methods=["GET"])
 @require_admin
 def list_users():
-    """List all users with their instances"""
-    users = get_all_users()
-    
-    # Get instances per user from local SQLite
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, user_id FROM oc_instances")
-    all_instances = c.fetchall()
-    conn.close()
-    
-    user_instances = {}
-    for inst in all_instances:
-        uid = inst["user_id"]
-        if uid not in user_instances:
-            user_instances[uid] = []
-        user_instances[uid].append({"id": inst["id"], "name": inst["name"]})
-    
-    # Get watches per user from local SQLite
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, user_id FROM watch_devices")
-    all_watches = c.fetchall()
-    conn.close()
-    
-    user_watches = {}
-    for w in all_watches:
-        uid = w["user_id"]
-        if uid not in user_watches:
-            user_watches[uid] = []
-        user_watches[uid].append({"id": w["id"], "name": w["name"]})
-    
-    result = []
-    for u in users:
-        uid = u["id"]
-        created = u.get("created_at", 0)
-        if isinstance(created, int) and created > 0:
-            from datetime import datetime
-            created = datetime.fromtimestamp(created).strftime("%Y-%m-%d %H:%M")
-        else:
-            created = ""
-        result.append({
-            "id": uid,
-            "name": u.get("name", ""),
-            "created_at": created,
-            "user_token": u.get("user_token", ""),
-            "instances": user_instances.get(uid, []),
-            "watches": user_watches.get(uid, [])
-        })
-    
-    return jsonify({
-        "users": result,
-        "total": len(result)
-    }), 200
-
+    """List all users with their instances and watches"""
+    _, users = pb_get("relay_users")
+    items = users.get("items", []) if users else []
+    _, instances = pb_get("oc_instances")
+    _, watches = pb_get("watch_devices")
+    instance_map = {}
+    watch_map = {}
+    for inst in (instances.get("items", []) if instances else []):
+        uid = inst.get("user_id", "")
+        if uid not in instance_map:
+            instance_map[uid] = []
+        instance_map[uid].append({"id": inst.get("id"), "name": inst.get("name", "")})
+    for w in (watches.get("items", []) if watches else []):
+        uid = w.get("user_id", "")
+        if uid not in watch_map:
+            watch_map[uid] = []
+        watch_map[uid].append({"id": w.get("id"), "name": w.get("name", "")})
+    result = [{
+        "id": u["id"],
+        "name": u.get("name", ""),
+        "created_at": u.get("created", ""),
+        "user_token": u.get("relay_token", ""),
+        "instances": instance_map.get(u["id"], []),
+        "watches": watch_map.get(u["id"], [])
+    } for u in items]
+    return jsonify({"users": result, "total": len(result)}), 200
 
 @app.route("/api/v1/admin/users", methods=["POST"])
 @require_admin
-def create_user_admin():
-    """Create a new user directly (admin only, no registration code needed)"""
+def create_user():
+    """Create a new user and return relay_token"""
     data = request.get_json() or {}
-    name = data.get("name", "")
-    
-    user_token = secrets.token_urlsafe(32)
-    user = create_user(name, user_token)
-    
-    if not user:
-        return jsonify({"error": "Failed to create user"}), 500
-    
+    name = data.get("name", "Unnamed User")
+    relay_token = secrets.token_urlsafe(32)
+    status, result = pb_post("relay_users", {
+        "name": name,
+        "relay_token": relay_token
+    })
+    if status not in (200, 201):
+        return jsonify({"error": result.get("message", "Failed to create user")}), 500
     return jsonify({
         "ok": True,
-        "user_id": user["id"],
-        "user_token": user_token,
-        "name": name,
-        "message": "Save this token securely - it cannot be recovered"
+        "user_id": result.get("id"),
+        "user_token": relay_token
     }), 201
 
 @app.route("/api/v1/admin/users/<user_id>", methods=["DELETE"])
 @require_admin
-def delete_user_api(user_id):
-    """Delete a user"""
-    if delete_user(user_id):
-        return jsonify({"ok": True}), 200
-    return jsonify({"error": "Failed to delete user"}), 500
+def delete_user(user_id):
+    status, _ = pb_delete("relay_users", user_id)
+    if status not in (200, 204):
+        return jsonify({"error": "Delete failed"}), 500
+    # Also delete user's instances and watches
+    _, instances = pb_get("oc_instances", params={"filter": f'user_id="{user_id}"'})
+    for inst in (instances.get("items", []) if instances else []):
+        pb_delete("oc_instances", inst["id"])
+    _, watches = pb_get("watch_devices", params={"filter": f'user_id="{user_id}"'})
+    for w in (watches.get("items", []) if watches else []):
+        pb_delete("watch_devices", w["id"])
+    return jsonify({"ok": True}), 200
 
 # ============================================================
-# User Registration (disabled - users are created by admin only)
+# OpenClaw Instance API
 # ============================================================
-
-@app.route("/api/v1/register", methods=["POST"])
-def register_user():
-    """Register a new user (disabled - use admin API to create users)"""
-    return jsonify({"error": "User self-registration is disabled. Please ask admin to create a user."}), 403
-
-# ============================================================
-# OpenClaw Instance Management (local SQLite)
-# ============================================================
-
 @app.route("/api/v1/oc/register", methods=["POST"])
-@require_user_token
-def register_instance():
-    """Register a new OpenClaw instance under this user"""
+def oc_register():
+    """Register a new OpenClaw instance for a user"""
+    relay_token = request.headers.get("X-User-Token", "")
+    if not relay_token:
+        return jsonify({"error": "Missing X-User-Token"}), 401
+    user = get_user_by_relay_token(relay_token)
+    if not user:
+        return jsonify({"error": "Invalid relay_token"}), 401
     data = request.get_json() or {}
     name = data.get("name", "OpenClaw")
-    
     instance_token = secrets.token_urlsafe(32)
-    instance_id = str(uuid.uuid4())[:8]
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO oc_instances (id, user_id, name, instance_token_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-        (instance_id, request.user["id"], name, hash_token(instance_token), get_timestamp())
-    )
-    conn.commit()
-    conn.close()
-    
+    instance_token_hash = hash_token(instance_token)
+    status, result = pb_post("oc_instances", {
+        "user_id": user["id"],
+        "name": name,
+        "instance_token": instance_token_hash
+    })
+    if status not in (200, 201):
+        return jsonify({"error": result.get("message", "Failed to register")}), 500
     return jsonify({
         "ok": True,
-        "instance_id": instance_id,
-        "instance_token": instance_token,
-        "message": "Save this token securely"
+        "instance_id": result.get("id"),
+        "instance_token": instance_token
     }), 201
 
-@app.route("/api/v1/oc/<instance_id>/instances", methods=["GET"])
-@require_user_token
-def list_instances(instance_id):
-    """List all instances for this user"""
-    if instance_id != request.user["id"]:
-        return jsonify({"error": "Access denied"}), 403
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, created_at FROM oc_instances WHERE user_id = ?", (instance_id,))
-    instances = [dict(row) for row in c.fetchall()]
-    conn.close()
-    
-    return jsonify({"instances": instances}), 200
+def verify_instance_token(instance_token: str, stored_hash: str) -> bool:
+    return verify_token(instance_token, stored_hash)
 
-# ============================================================
-# OpenClaw Message/Status Push
-# ============================================================
-
-@app.route("/api/v1/oc/message", methods=["POST"])
-@require_instance_token
-def push_message():
-    """Receive message from OpenClaw instance"""
-    instance = request.instance
-    data = request.get_json() or {}
-    
-    content = data.get("content", "")
-    if not content:
-        return jsonify({"error": "content is required"}), 400
-    
-    msg_type = data.get("type", "message")
-    source = data.get("source", "openclaw")
-    sender = data.get("sender", "System")
-    
-    msg_id = str(uuid.uuid4())[:8]
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO messages (id, instance_id, type, content, source, sender, timestamp, read) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-        (msg_id, instance["id"], msg_type, content[:200], source, sender, get_timestamp())
-    )
-    conn.commit()
-    conn.close()
-    
-    cleanup_old_messages(instance["id"])
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("UPDATE status SET last_message_ago = 0, lastUpdate = ? WHERE instance_id = ?",
-              (get_timestamp(), instance["id"]))
-    conn.commit()
-    conn.close()
-    
-    event = {
-        "type": "message",
-        "instance_id": instance["id"],
-        "content": content[:200],
-        "source": source,
-        "sender": sender,
-        "timestamp": get_timestamp(),
-        "id": msg_id
-    }
-    notify_watch_sse(instance["id"], event)
-    
-    return jsonify({"ok": True, "id": msg_id}), 200
+def get_instance_by_token(instance_token: str) -> dict | None:
+    """Find instance by token hash"""
+    _, instances = pb_get("oc_instances", params={"perPage": 500})
+    if not instances:
+        return None
+    for inst in instances.get("items", []):
+        if verify_instance_token(instance_token, inst.get("instance_token", "")):
+            return inst
+    return None
 
 @app.route("/api/v1/oc/status", methods=["POST"])
-@require_instance_token
-def push_status():
-    """Receive status update from OpenClaw instance"""
-    instance = request.instance
+def oc_status():
+    """Push OpenClaw status (upsert - update existing or create)"""
+    instance_token = request.headers.get("X-Instance-Token", "")
+    if not instance_token:
+        return jsonify({"error": "Missing X-Instance-Token"}), 401
+    instance = get_instance_by_token(instance_token)
+    if not instance:
+        return jsonify({"error": "Invalid instance token"}), 401
     data = request.get_json() or {}
-    
-    ok = data.get("ok", True)
-    uptime = data.get("uptime", 0)
     channels = data.get("channels", [])
-    memory = data.get("memory", 0)
-    cpu = data.get("cpu", 0)
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        INSERT OR REPLACE INTO status 
-        (instance_id, ok, uptime, channels, memory, cpu, last_message_ago, lastUpdate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (instance["id"], 1 if ok else 0, uptime, json.dumps(channels), 
-           memory, cpu, data.get("last_message_ago", 0), get_timestamp()))
-    conn.commit()
-    conn.close()
-    
+    if isinstance(channels, list):
+        channels = ",".join(channels)
+    lastUpdate = int(time.time())
+    # Upsert relay_status by instance_id
+    filter_q = f'instance_id="{instance["id"]}"'
+    status, result = pb_upsert("relay_status", filter_q, {
+        "instance_id": instance["id"],
+        "ok": 1 if data.get("ok") else 0,
+        "uptime": data.get("uptime", 0),
+        "channels": channels,
+        "memory": data.get("memory", 0),
+        "cpu": data.get("cpu", 0),
+        "last_message_ago": data.get("last_message_ago", 0),
+        "lastUpdate": lastUpdate
+    })
+    if status not in (200, 201):
+        return jsonify({"error": "Failed to update status"}), 500
     return jsonify({"ok": True}), 200
 
 @app.route("/api/v1/oc/thinking", methods=["POST"])
-@require_instance_token
-def push_thinking():
-    """Receive thinking status update from OpenClaw instance"""
-    instance = request.instance
+def oc_thinking():
+    """Push thinking status"""
+    instance_token = request.headers.get("X-Instance-Token", "")
+    if not instance_token:
+        return jsonify({"error": "Missing X-Instance-Token"}), 401
+    instance = get_instance_by_token(instance_token)
+    if not instance:
+        return jsonify({"error": "Invalid instance token"}), 401
     data = request.get_json() or {}
-    
-    thinking = data.get("thinking", False)
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("UPDATE status SET thinking = ?, lastUpdate = ? WHERE instance_id = ?",
-              (1 if thinking else 0, get_timestamp(), instance["id"]))
-    conn.commit()
-    conn.close()
-    
-    event = {
-        "type": "thinking",
+    filter_q = f'instance_id="{instance["id"]}"'
+    status, result = pb_upsert("relay_status", filter_q, {
         "instance_id": instance["id"],
-        "thinking": thinking,
-        "timestamp": get_timestamp()
-    }
-    notify_watch_sse(instance["id"], event)
-    
+        "thinking": 1 if data.get("thinking") else 0
+    })
+    if status not in (200, 201):
+        return jsonify({"error": "Failed to update thinking"}), 500
     return jsonify({"ok": True}), 200
 
-# ============================================================
-# Watch Device Management
-# ============================================================
+@app.route("/api/v1/oc/message", methods=["POST"])
+def oc_message():
+    """Push a message from OpenClaw"""
+    instance_token = request.headers.get("X-Instance-Token", "")
+    if not instance_token:
+        return jsonify({"error": "Missing X-Instance-Token"}), 401
+    instance = get_instance_by_token(instance_token)
+    if not instance:
+        return jsonify({"error": "Invalid instance token"}), 401
+    data = request.get_json() or {}
+    content = (data.get("content", "") or "")[:200]
+    msg_id = secrets.token_urlsafe(16)
+    status, result = pb_post("relay_messages", {
+        "instance_id": instance["id"],
+        "type": data.get("type", "message"),
+        "content": content,
+        "source": data.get("source", ""),
+        "sender": data.get("sender", ""),
+        "timestamp": int(time.time()),
+        "read": 0
+    })
+    if status not in (200, 201):
+        return jsonify({"error": "Failed to save message"}), 500
+    return jsonify({"ok": True, "id": result.get("id", msg_id)}), 200
 
+# ============================================================
+# Watch Device API
+# ============================================================
 @app.route("/api/v1/watch/bind", methods=["POST"])
-@require_user_token
-def bind_watch():
-    """Bind a new watch device to this user's account"""
+def watch_bind():
+    """Bind a new watch device to a user"""
+    relay_token = request.headers.get("X-User-Token", "")
+    if not relay_token:
+        return jsonify({"error": "Missing X-User-Token"}), 401
+    user = get_user_by_relay_token(relay_token)
+    if not user:
+        return jsonify({"error": "Invalid relay_token"}), 401
     data = request.get_json() or {}
     name = data.get("name", "Watch")
-    
     watch_token = secrets.token_urlsafe(32)
-    watch_id = str(uuid.uuid4())[:8]
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO watch_devices (id, user_id, name, watch_token_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-        (watch_id, request.user["id"], name, hash_token(watch_token), get_timestamp())
-    )
-    conn.commit()
-    conn.close()
-    
+    watch_token_hash = hash_token(watch_token)
+    status, result = pb_post("watch_devices", {
+        "user_id": user["id"],
+        "name": name,
+        "watch_token": watch_token_hash,
+        "current_instance_id": ""
+    })
+    if status not in (200, 201):
+        return jsonify({"error": result.get("message", "Failed to bind watch")}), 500
     return jsonify({
         "ok": True,
-        "watch_id": watch_id,
-        "watch_token": watch_token,
-        "message": "Save this token securely"
+        "watch_id": result.get("id"),
+        "watch_token": watch_token
     }), 201
 
+def verify_watch_token(watch_token: str, stored_hash: str) -> bool:
+    return verify_token(watch_token, stored_hash)
+
+def get_watch_by_token(watch_token: str) -> dict | None:
+    _, watches = pb_get("watch_devices", params={"perPage": 500})
+    if not watches:
+        return None
+    for w in watches.get("items", []):
+        if verify_watch_token(watch_token, w.get("watch_token", "")):
+            return w
+    return None
+
 @app.route("/api/v1/watch/instances", methods=["GET"])
-@require_watch_token
-def get_watch_instances():
-    """Get all OpenClaw instances available to this watch"""
-    watch = request.watch
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        SELECT oci.id, oci.name, oci.created_at,
-               wd.current_instance_id IS NOT NULL AND wd.current_instance_id = oci.id as subscribed
-        FROM oc_instances oci
-        JOIN watch_devices wd ON wd.user_id = oci.user_id
-        WHERE wd.id = ?
-    """, (watch["id"],))
-    instances = [dict(row) for row in c.fetchall()]
-    conn.close()
-    
-    return jsonify({"instances": instances}), 200
+def watch_instances():
+    """Get all instances for the watch's user"""
+    watch_token = request.headers.get("X-Watch-Token", "")
+    if not watch_token:
+        return jsonify({"error": "Missing X-Watch-Token"}), 401
+    watch = get_watch_by_token(watch_token)
+    if not watch:
+        return jsonify({"error": "Invalid watch token"}), 401
+    _, instances = pb_get("oc_instances", params={
+        "filter": f'user_id="{watch["user_id"]}"'
+    })
+    items = instances.get("items", []) if instances else []
+    current = watch.get("current_instance_id", "")
+    result = [{
+        "id": inst.get("id"),
+        "name": inst.get("name", "OpenClaw"),
+        "subscribed": inst.get("id") == current
+    } for inst in items]
+    return jsonify({"instances": result}), 200
 
 @app.route("/api/v1/watch/subscribe", methods=["POST"])
-@require_watch_token
-def subscribe_instance():
-    """Switch the watch to subscribe to a different OpenClaw instance"""
-    watch = request.watch
+def watch_subscribe():
+    """Switch subscribed instance"""
+    watch_token = request.headers.get("X-Watch-Token", "")
+    if not watch_token:
+        return jsonify({"error": "Missing X-Watch-Token"}), 401
+    watch = get_watch_by_token(watch_token)
+    if not watch:
+        return jsonify({"error": "Invalid watch token"}), 401
     data = request.get_json() or {}
     instance_id = data.get("instance_id", "")
-    
-    if instance_id:
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT id FROM oc_instances WHERE id = ? AND user_id = ?",
-                  (instance_id, watch["user_id"]))
-        if not c.fetchone():
-            conn.close()
-            return jsonify({"error": "Instance not found or access denied"}), 403
-        conn.close()
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("UPDATE watch_devices SET current_instance_id = ? WHERE id = ?",
-              (instance_id, watch["id"]))
-    conn.commit()
-    conn.close()
-    
-    with sse_clients_lock:
-        if watch["watch_token"] in sse_clients:
-            sse_clients[watch["watch_token"]]["instance_id"] = instance_id
-    
-    return jsonify({"ok": True, "subscribed_instance": instance_id}), 200
+    status, _ = pb_post("watch_devices", {"current_instance_id": instance_id}, watch["id"])
+    if status not in (200, 201):
+        return jsonify({"error": "Failed to subscribe"}), 500
+    return jsonify({"ok": True}), 200
 
 @app.route("/api/v1/watch/status", methods=["GET"])
-@require_watch_token
-def get_watch_status():
-    """Get current status for the watch's subscribed instance"""
-    watch = request.watch
-    
-    instance_id = watch.get("current_instance_id")
+def watch_status():
+    """Get current status for watch's subscribed instance"""
+    watch_token = request.headers.get("X-Watch-Token", "")
+    if not watch_token:
+        return jsonify({"error": "Missing X-Watch-Token"}), 401
+    watch = get_watch_by_token(watch_token)
+    if not watch:
+        return jsonify({"error": "Invalid watch token"}), 401
+    instance_id = watch.get("current_instance_id", "")
     if not instance_id:
-        return jsonify({"error": "No instance subscribed"}), 400
-    
-    conn = get_db()
-    c = conn.cursor()
-    
-    c.execute("SELECT * FROM oc_instances WHERE id = ?", (instance_id,))
-    instance_row = c.fetchone()
-    if not instance_row:
-        conn.close()
-        return jsonify({"error": "Instance not found"}), 404
-    
-    c.execute("SELECT * FROM status WHERE instance_id = ?", (instance_id,))
-    status_row = c.fetchone()
-    
-    c.execute("""
-        SELECT * FROM messages WHERE instance_id = ? 
-        ORDER BY timestamp DESC LIMIT 5
-    """, (instance_id,))
-    messages = [dict(row) for row in c.fetchall()]
-    
-    conn.close()
-    
-    status = {
-        "instance_id": instance_id,
-        "instance_name": instance_row["name"],
-        "ok": bool(status_row["ok"]) if status_row else False,
-        "thinking": bool(status_row["thinking"]) if status_row else False,
-        "uptime": status_row["uptime"] if status_row else 0,
-        "channels": json.loads(status_row["channels"]) if status_row and status_row["channels"] else [],
-        "memory": status_row["memory"] if status_row else 0,
-        "cpu": status_row["cpu"] if status_row else 0,
-        "last_message_ago": status_row["last_message_ago"] if status_row else 0,
-        "lastUpdate": status_row["lastUpdate"] if status_row else 0,
-        "recent_messages": messages
-    }
-    
-    return jsonify(status), 200
+        return jsonify({"ok": False, "error": "No instance subscribed"}), 200
+    # Get instance info
+    _, inst_data = pb_get("oc_instances", instance_id)
+    if not inst_data or not inst_data.get("id"):
+        return jsonify({"ok": False, "error": "Instance not found"}), 200
+    # Get status
+    filter_enc = requests.utils.quote(f'instance_id="{instance_id}"')
+    _, status_data = pb_get("relay_status", params={"filter": filter_enc})
+    status_items = status_data.get("items", []) if status_data else []
+    # Get recent messages
+    filter_enc2 = requests.utils.quote(f'instance_id="{instance_id}"')
+    _, msg_data = pb_get("relay_messages", params={
+        "filter": filter_enc2,
+        "sort": "-timestamp",
+        "perPage": 10
+    })
+    messages = [{
+        "id": m.get("id"),
+        "type": m.get("type"),
+        "content": m.get("content"),
+        "source": m.get("source"),
+        "sender": m.get("sender"),
+        "timestamp": m.get("timestamp")
+    } for m in (msg_data.get("items", []) if msg_data else [])]
+    st = status_items[0] if status_items else {}
+    channels = st.get("channels", "")
+    if isinstance(channels, str):
+        channels = [c for c in channels.split(",") if c]
+    return jsonify({
+        "ok": bool(st.get("ok")),
+        "thinking": bool(st.get("thinking")),
+        "uptime": st.get("uptime", 0),
+        "channels": channels,
+        "memory": st.get("memory", 0),
+        "cpu": st.get("cpu", 0),
+        "last_message_ago": st.get("last_message_ago", 0),
+        "recent_messages": messages,
+        "instance_name": inst_data.get("name", "OpenClaw")
+    }), 200
 
 @app.route("/api/v1/watch/messages", methods=["GET"])
-@require_watch_token
-def get_watch_messages():
-    """Get recent messages for the watch's subscribed instance"""
-    watch = request.watch
-    limit = min(request.args.get("limit", default=20, type=int), 50)
-    
-    instance_id = watch.get("current_instance_id")
+def watch_messages():
+    """Get message history for watch's subscribed instance"""
+    watch_token = request.headers.get("X-Watch-Token", "")
+    if not watch_token:
+        return jsonify({"error": "Missing X-Watch-Token"}), 401
+    watch = get_watch_by_token(watch_token)
+    if not watch:
+        return jsonify({"error": "Invalid watch token"}), 401
+    instance_id = watch.get("current_instance_id", "")
     if not instance_id:
-        return jsonify({"error": "No instance subscribed"}), 400
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM messages WHERE instance_id = ? 
-        ORDER BY timestamp DESC LIMIT ?
-    """, (instance_id, limit))
-    messages = [dict(row) for row in c.fetchall()]
-    conn.close()
-    
+        return jsonify({"messages": [], "count": 0}), 200
+    limit = int(request.args.get("limit", 20))
+    filter_enc = requests.utils.quote(f'instance_id="{instance_id}"')
+    _, msg_data = pb_get("relay_messages", params={
+        "filter": filter_enc,
+        "sort": "-timestamp",
+        "perPage": limit
+    })
+    messages = [{
+        "id": m.get("id"),
+        "type": m.get("type"),
+        "content": m.get("content"),
+        "source": m.get("source"),
+        "sender": m.get("sender"),
+        "timestamp": m.get("timestamp")
+    } for m in (msg_data.get("items", []) if msg_data else [])]
     return jsonify({"messages": messages, "count": len(messages)}), 200
 
-@app.route("/api/v1/watch/events")
-@require_watch_token
+@app.route("/api/v1/watch/events", methods=["GET"])
 def watch_events():
-    """SSE stream for real-time updates to subscribed instance"""
-    watch = request.watch
-    
-    instance_id = watch.get("current_instance_id")
-    
+    """SSE stream for watch real-time events"""
+    watch_token = request.headers.get("X-Watch-Token", "")
+    if not watch_token:
+        return Response("data: {\"error\":\"Missing X-Watch-Token\"}\n\n", mimetype="text/event-stream")
+    watch = get_watch_by_token(watch_token)
+    if not watch:
+        return Response("data: {\"error\":\"Invalid watch token\"}\n\n", mimetype="text/event-stream")
     def generate():
-        queue = []
-        client = {"queue": queue, "instance_id": instance_id, "watch_token": watch["watch_token"]}
-        
-        with sse_clients_lock:
-            sse_clients[watch["watch_token"]] = client
-        
-        try:
-            yield "data: %s\n\n" % json.dumps({
-                "type": "connected",
-                "instance_id": instance_id,
-                "time": get_timestamp()
-            })
-            
+        last_mtime = 0
+        last_status = {}
+        while True:
+            instance_id = watch.get("current_instance_id", "")
             if instance_id:
-                conn = get_db()
-                c = conn.cursor()
-                c.execute("SELECT * FROM status WHERE instance_id = ?", (instance_id,))
-                status_row = c.fetchone()
-                conn.close()
-                
-                if status_row:
-                    yield "data: %s\n\n" % json.dumps({
-                        "type": "status",
-                        "instance_id": instance_id,
-                        "ok": bool(status_row["ok"]),
-                        "thinking": bool(status_row["thinking"]),
-                        "uptime": status_row["uptime"],
-                        "channels": json.loads(status_row["channels"]) if status_row["channels"] else [],
-                        "memory": status_row["memory"],
-                        "cpu": status_row["cpu"],
-                        "last_message_ago": status_row["last_message_ago"],
-                        "timestamp": status_row["lastUpdate"]
-                    })
-            
-            while True:
-                if queue:
-                    while queue:
-                        item = queue.pop(0)
-                        yield "data: %s\n\n" % item
-                else:
-                    time.sleep(0.5)
-        
-        finally:
-            with sse_clients_lock:
-                if watch["watch_token"] in sse_clients:
-                    del sse_clients[watch["watch_token"]]
-    
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
+                # Check for new messages
+                filter_enc = requests.utils.quote(f'instance_id="{instance_id}"&timestamp>{last_mtime}')
+                _, msg_data = pb_get("relay_messages", params={
+                    "filter": filter_enc,
+                    "sort": "-timestamp",
+                    "perPage": 5
+                })
+                for m in (msg_data.get("items", []) if msg_data else []):
+                    ts = m.get("timestamp", 0)
+                    if ts > last_mtime:
+                        last_mtime = ts
+                        yield f"data: {json.dumps({'type':'message','data':m})}\n\n"
+                # Check status change
+                filter_enc2 = requests.utils.quote(f'instance_id="{instance_id}"')
+                _, status_data = pb_get("relay_status", params={"filter": filter_enc2})
+                items = status_data.get("items", []) if status_data else []
+                if items:
+                    st = items[0]
+                    st_key = f"{st.get('uptime')}-{st.get('lastUpdate')}"
+                    if st_key != last_status.get(instance_id):
+                        last_status[instance_id] = st_key
+                        yield f"data: {json.dumps({'type':'status','data':st})}\n\n"
+            time.sleep(3)
+    return Response(generate(), mimetype="text/event-stream")
 
 # ============================================================
-# PocketBase Proxy (for UI pages)
+# Admin HTML
 # ============================================================
-
-@app.route("/api/collections/pebble_admins/auth-with-password", methods=["POST"])
-def pb_admin_auth():
-    """Proxy to PocketBase admin auth"""
-    data = request.get_json() or {}
-    try:
-        resp = requests.post(
-            f"{PB_URL}/api/collections/pebble_admins/auth-with-password",
-            json=data,
-            headers={"Content-Type": "application/json"},
-            timeout=10
-        )
-        return jsonify(resp.json()), resp.status_code
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ============================================================
-# Legacy / Compatibility
-# ============================================================
-
-@app.route("/webhook", methods=["POST"])
-def legacy_webhook():
-    return jsonify({"error": "Use /api/v1/oc/message instead"}), 410
-
-@app.route("/status", methods=["GET"])
-def legacy_get_status():
-    return jsonify({"error": "Use /api/v1/watch/status instead"}), 410
-
-@app.route("/status", methods=["POST"])
-def legacy_post_status():
-    return jsonify({"error": "Use /api/v1/oc/status instead"}), 410
-
-# ============================================================
-# Static UI Pages
-# ============================================================
-
-@app.route("/register")
-def register_page():
-    return send_from_directory("/app", "register.html")
-
 @app.route("/admin")
 def admin_page():
-    return send_from_directory("/app", "admin.html")
-
-@app.route("/watch-setup")
-def watch_setup_page():
-    return send_from_directory("/app", "watch-setup.html")
+    with open(os.path.join(os.path.dirname(__file__), "admin.html")) as f:
+        return f.read(), 200, {"Content-Type": "text/html"}
 
 # ============================================================
-# Start
+# Main
 # ============================================================
-
 if __name__ == "__main__":
-    init_db()
-    print(f"[pebble-relay v2.0.0-pb] Starting on port {PORT}")
-    print(f"[pebble-relay] Config: {CONFIG_PATH}")
-    print(f"[pebble-relay] Database: {DB_PATH}")
+    import sys
+    port = int(os.environ.get("PORT", 8977))
+    print(f"[pebble-relay] Starting v2.1 on port {port}")
     print(f"[pebble-relay] PocketBase: {PB_URL}")
     if not config.get("admin", {}).get("password_hash"):
         print(f"[pebble-relay] First-time setup: POST /api/v1/admin/setup with {{\"password\":\"your_password\"}}")
-    app.run(host="0.0.0.0", port=PORT, debug=config.get("server", {}).get("debug", False), threaded=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
