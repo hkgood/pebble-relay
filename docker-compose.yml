@@ -1,25 +1,15 @@
 services:
   pebble-relay:
-    build: .
-    image: pebble-relay:latest
-    container_name: pebble-relay
+    image: ghcr.io/hkgood/pebble-relay:main
+    restart: always
     ports:
       - "8977:8977"
     volumes:
-      - pebble-data:/data
+      - relay-data:/data
     environment:
-      - PB_URL=https://pb.osglab.com
-      - PB_ADMIN_EMAIL=rocky.hk@gmail.com
-      - PB_ADMIN_PASSWORD=gz203799
-      - PB_API_TOKEN=${PB_API_TOKEN:-}
-      - PB_SUPERUSER_EMAIL=${PB_SUPERUSER_EMAIL:-}
-      - PB_SUPERUSER_PASSWORD=${PB_SUPERUSER_PASSWORD:-}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8977/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      - PB_URL=${PB_URL:-https://pb.osglab.com}
+      - PB_SUPERUSER_EMAIL=${PB_SUPERUSER_EMAIL:-rocky.hk@gmail.com}
+      - PB_SUPERUSER_PASSWORD=${PB_SUPERUSER_PASSWORD:-gz203799}
 
 volumes:
-  pebble-data:
+  relay-data:
