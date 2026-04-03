@@ -15,6 +15,11 @@
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     pebble-relay Server                       │
+│                        (Docker)                               │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                   SQLite (/data/relay.db)              │  │
+│  │  pebble_users │ oc_instances │ watch_devices │ ...    │  │
+│  └──────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌────────────┐    ┌────────────┐    ┌──────────────────┐   │
 │  │   User A   │    │   User B   │    │     User C       │   │
@@ -31,14 +36,15 @@
 
 ---
 
-## 3. 数据模型
+## 3. 数据模型（SQLite 本地存储）
 
-### users（用户表）
+### pebble_users（用户表）
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | TEXT | 用户唯一ID（8字符UUID） |
-| user_token_hash | TEXT | bcrypt hash of user_token |
+| id | TEXT | 用户唯一ID（16字符 URL-safe token） |
 | name | TEXT | 用户自定义名称 |
+| user_token | TEXT | 用户凭证 Token（明文，用于 admin 显示） |
+| user_token_hash | TEXT | bcrypt hash of user_token |
 | created_at | INTEGER | 创建时间戳 |
 
 ### oc_instances（OpenClaw实例表）
@@ -46,7 +52,7 @@
 |------|------|------|
 | id | TEXT | 实例唯一ID |
 | user_id | TEXT | 所属用户ID |
-| name | TEXT | 实例名称（如"香橙派"、"备用服务器"） |
+| name | TEXT | 实例名称 |
 | instance_token_hash | TEXT | bcrypt hash |
 | created_at | INTEGER | 创建时间戳 |
 
@@ -55,7 +61,7 @@
 |------|------|------|
 | id | TEXT | 设备唯一ID |
 | user_id | TEXT | 所属用户ID |
-| name | TEXT | 设备名称（如"Apple Watch"） |
+| name | TEXT | 设备名称 |
 | watch_token_hash | TEXT | bcrypt hash |
 | current_instance_id | TEXT | 当前订阅的实例ID |
 | created_at | INTEGER | 创建时间戳 |
@@ -91,11 +97,18 @@
 
 ### 4.1 管理员接口
 
-**检查 PocketBase 连接状态**
+**登录管理员**
+```
+POST /api/collections/pebble_admins/auth-with-password
+Body: {"identity": "admin@email.com", "password": "password"}
+Response: {"ok": true, "token": "..."}
+```
+
+**检查数据库状态**
 ```
 GET /api/v1/admin/check
 Header: Authorization: Bearer <admin_token>
-Response: {"pb_url": "...", "pb_api_token_configured": true/false, "write_ok": true/false}
+Response: {"db_ok": true, "message": "..."}
 ```
 
 **获取服务器信息**
@@ -224,7 +237,6 @@ Response: SSE stream
 
 - **语言**：Python 3 + Flask
 - **数据库**：SQLite（零依赖，持久化）
-- **外部认证**：PocketBase（pebble_users, pebble_admins collections）
 - **密码哈希**：bcrypt
 - **实时推送**：SSE（Server-Sent Events）
 - **配置**：YAML 配置文件
@@ -235,33 +247,14 @@ Response: SSE stream
 
 ## 6. 安全设计
 
-- 所有 Token 均使用 bcrypt 哈希存储
-- 用户间数据完全隔离（通过 user_token_hash 关联）
-- PocketBase Superuser API Token 用于服务器端管理操作
+- 所有 Token 均使用 bcrypt 哈希存储（验证时比对 hash）
+- 用户间数据完全隔离（通过 user_id 关联）
 - user_token 创建后仅显示一次，无法找回
+- PocketBase 仅用于管理员认证，不再存储用户业务数据
 
 ---
 
-## 7. PocketBase Collections
-
-需要在 PocketBase 中手动创建的 Collection：
-
-### pebble_users（普通记录集合）
-| 字段 | 类型 |
-|------|------|
-| name | Text |
-| user_token | Text |
-
-### pebble_admins（PocketBase 内置 Auth Collection）
-- 使用 PocketBase Admin 面板登录
-- 用于管理员认证
-
-### pebble_reg_codes（可选，已废弃）
-- 旧版本用于注册码，已不需要
-
----
-
-## 8. 部署
+## 7. 部署
 
 ### 快速部署
 
@@ -273,27 +266,19 @@ cd /opt/pebble-relay
 # 配置环境变量（创建 .env 文件）
 cat > .env << EOF
 PB_URL=https://pb.osglab.com
-PB_ADMIN_EMAIL=your@email.com
-PB_ADMIN_PASSWORD=your_password
-PB_API_TOKEN=your_pocketbase_superuser_api_token
+PB_ADMIN_EMAIL=admin@email.com
+PB_ADMIN_PASSWORD=your_admin_password
 EOF
 
 # 启动服务
 docker compose up -d
 ```
 
-### 获取 PocketBase Superuser API Token
-
-1. 登录 PocketBase 管理面板
-2. 进入 **Settings → Authentication → API Tokens**
-3. 创建一个 Superuser API Token（需要 Superuser 权限）
-4. 将 Token 填入 `PB_API_TOKEN` 环境变量
-
-> ⚠️ 没有 `PB_API_TOKEN` 将无法创建用户。普通 PocketBase admin 认证权限不足以写入 `pebble_users` 集合。
+> ⚠️ PocketBase 相关环境变量（PB_URL 等）仅用于管理员认证，不再存储用户数据。
 
 ---
 
-## 9. OpenClaw 集成
+## 8. OpenClaw 集成
 
 在 OpenClaw 端配置：
 1. 管理员在 pebble-relay 后台创建用户 → 获得 user_token
