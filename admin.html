@@ -174,14 +174,49 @@
             border-radius: 6px;
             color: #888;
         }
-        .token-badge {
-            cursor: pointer;
+        .token-section {
+            background: rgba(0,255,136,0.08);
+            border: 1px solid rgba(0,255,136,0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+        }
+        .token-label {
+            font-size: 11px;
+            color: #0f0;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .token-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .token-value {
             font-family: monospace;
-            color: #4facfe;
+            font-size: 12px;
+            color: #fff;
+            background: rgba(0,0,0,0.3);
+            padding: 8px 12px;
+            border-radius: 6px;
+            flex: 1;
+            word-break: break-all;
         }
-        .token-badge:hover {
-            background: rgba(79,172,254,0.15);
+        .copy-btn {
+            background: rgba(0,255,136,0.15);
+            border: 1px solid rgba(0,255,136,0.3);
+            color: #0f0;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: monospace;
+            white-space: nowrap;
         }
+        .copy-btn:hover { background: rgba(0,255,136,0.25); }
+        .copy-btn.copied { background: rgba(0,255,136,0.4); }
+        .copy-btn.danger { background: rgba(255,82,82,0.15); border-color: rgba(255,82,82,0.3); color: #ff6b6b; }
+        .copy-btn.danger:hover { background: rgba(255,82,82,0.25); }
         .token-display {
             background: rgba(0,255,136,0.1);
             border: 1px solid rgba(0,255,136,0.3);
@@ -308,10 +343,13 @@
                 </div>
                 <button class="btn-secondary" onclick="createUser()" style="padding: 14px 24px;">创建</button>
             </div>
-            <div id="tokenDisplay" class="token-display hidden">
+            <div id="tokenDisplay" class="token-section hidden">
                 <div class="token-label">✅ 用户创建成功 — Token 仅显示一次，请立即复制保存：</div>
-                <div class="token-value" id="tokenValue"></div>
-                <div class="token-warning">⚠️ 此 Token 无法找回，请妥善保管！</div>
+                <div class="token-row">
+                    <div class="token-value" id="tokenValue"></div>
+                    <button class="copy-btn" onclick="copyToken()">复制</button>
+                </div>
+                <div class="token-warning" style="font-size:12px;color:#ff6b6b;margin-top:8px;">⚠️ 此 Token 无法找回，请妥善保管！</div>
             </div>
         </div>
 
@@ -488,7 +526,7 @@
                             const instances = u.instances || [];
                             const watches = u.watches || [];
                             const token = u.user_token || '';
-                            const maskedToken = token ? token.substring(0, 8) + '****' + token.substring(token.length - 4) : '-';
+                            const maskedToken = token ? token.substring(0, 6) + '****' + token.substring(token.length - 4) : '-';
                             
                             const instHtml = instances.length 
                                 ? instances.map(i => `
@@ -499,6 +537,15 @@
                                 `).join('')
                                 : '<div class="no-instances">暂无实例</div>';
                             
+                            const watchHtml = watches.length
+                                ? watches.map(w => `
+                                    <div class="instance-item">
+                                        <span class="inst-name">${w.name || '未命名手表'}</span>
+                                        <span class="inst-id">${w.id}</span>
+                                    </div>
+                                `).join('')
+                                : '<div class="no-instances">暂无手表</div>';
+                            
                             return `
                                 <div class="user-item">
                                     <div class="user-header">
@@ -508,17 +555,27 @@
                                             <div class="created">创建: ${u.created_at || '-'}</div>
                                         </div>
                                         <div class="user-actions">
-                                            <button class="btn-danger btn-sm" onclick="deleteUser('${u.id}')">删除</button>
+                                            <button class="btn-danger btn-sm" onclick="deleteUser('${u.id}', '${u.name}')">删除</button>
                                         </div>
                                     </div>
                                     <div class="user-stats-row">
                                         <span class="stat-badge">实例: ${instances.length}</span>
                                         <span class="stat-badge">手表: ${watches.length}</span>
-                                        <span class="stat-badge token-badge" onclick="showFullToken('${token}', '${u.name}')" title="点击查看完整Token">Token: ${maskedToken}</span>
+                                    </div>
+                                    <div class="token-section">
+                                        <div class="token-label">Relay Token</div>
+                                        <div class="token-row">
+                                            <div class="token-value">${maskedToken}</div>
+                                            <button class="copy-btn" onclick="copyUserToken('${token}', this)">复制</button>
+                                        </div>
                                     </div>
                                     <div class="instance-list">
-                                        <div style="font-size:11px;color:#555;margin-bottom:4px;">实例</div>
+                                        <div style="font-size:11px;color:#555;margin-bottom:4px;">实例 (${instances.length})</div>
                                         ${instHtml}
+                                    </div>
+                                    <div class="instance-list">
+                                        <div style="font-size:11px;color:#555;margin-bottom:4px;">手表 (${watches.length})</div>
+                                        ${watchHtml}
                                     </div>
                                 </div>
                             `;
@@ -534,8 +591,29 @@
             }
         }
 
-        function showFullToken(token, name) {
-            prompt(`用户「${name}」的完整 Token（请复制后妥善保管，刷新页面后需重新查看）：`, token);
+        function copyUserToken(token, btn) {
+            if (!token) return;
+            navigator.clipboard.writeText(token).then(() => {
+                btn.textContent = '已复制!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = '复制';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function copyToken() {
+            const token = document.getElementById('tokenValue').textContent;
+            navigator.clipboard.writeText(token).then(() => {
+                const btn = document.querySelector('#tokenDisplay .copy-btn');
+                btn.textContent = '已复制!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = '复制';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
         }
 
         async function deleteUser(userId) {
