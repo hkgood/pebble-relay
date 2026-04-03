@@ -347,10 +347,10 @@
                 return;
             }
             
-            // Verify password by calling admin info endpoint with X-Admin-Password header
+            // Verify password by calling admin info endpoint with X-Admin-Token header
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/info`, {
-                    headers: { 'X-Admin-Password': password }
+                    headers: { 'X-Admin-Token': password }
                 });
                 
                 if (resp.ok) {
@@ -388,7 +388,7 @@
             const box = document.getElementById('dbStatusBox');
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/check`, {
-                    headers: { 'X-Admin-Password': adminPassword }
+                    headers: { 'X-Admin-Token': adminPassword }
                 });
                 
                 if (resp.ok) {
@@ -419,7 +419,7 @@
         async function loadStats() {
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/info`, {
-                    headers: { 'X-Admin-Password': adminPassword }
+                    headers: { 'X-Admin-Token': adminPassword }
                 });
                 if (resp.ok) {
                     const data = await resp.json();
@@ -448,7 +448,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Admin-Password': adminPassword
+                        'X-Admin-Token': adminPassword
                     },
                     body: JSON.stringify({ name: name })
                 });
@@ -477,7 +477,7 @@
             const list = document.getElementById('userList');
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
-                    headers: { 'X-Admin-Password': adminPassword }
+                    headers: { 'X-Admin-Token': adminPassword }
                 });
                 if (resp.ok) {
                     const data = await resp.json();
@@ -543,7 +543,7 @@
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/users/${userId}`, {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Password': adminPassword }
+                    headers: { 'X-Admin-Token': adminPassword }
                 });
                 if (resp.ok) {
                     showToast('用户已删除');
