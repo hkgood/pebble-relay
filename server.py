@@ -182,6 +182,17 @@ def init_db():
         )
     """)
     
+    # pebble_users - Users (stored locally, not in PocketBase)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pebble_users (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            user_token_hash TEXT NOT NULL,
+            user_token TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    """)
+    
     # watch_devices - Watch devices per user
     c.execute("""
         CREATE TABLE IF NOT EXISTS watch_devices (
@@ -244,133 +255,93 @@ def verify_token(token: str, hashed: str) -> bool:
         return False
 
 # ============================================================
-# User Management via PocketBase
+
+# ============================================================
+# User Management via SQLite (local, no PocketBase needed)
 # ============================================================
 
 def get_user_by_token(user_token: str) -> dict | None:
-    """Find user by user_token in pebble_users collection"""
-    status, data = pb_api_get("pebble_users", params={"filter": f'user_token="{user_token}"'})
-    
-    if status == 200 and data.get("items"):
-        item = data["items"][0]
+    """Find user by user_token in local SQLite"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, name, user_token_hash, created_at FROM pebble_users WHERE user_token = ?", (user_token,))
+    row = c.fetchone()
+    conn.close()
+    if row:
         return {
-            "id": item["id"],
-            "name": item.get("name", ""),
-            "email": item.get("email", ""),
-            "user_token": item.get("user_token", "")
+            "id": row["id"],
+            "name": row["name"],
+            "created_at": row["created_at"]
         }
     return None
 
 def get_user_by_id(user_id: str) -> dict | None:
-    """Find user by ID in pebble_users collection"""
-    status, data = pb_api_get("pebble_users", record_id=user_id)
-    
-    if status == 200:
+    """Find user by ID in local SQLite"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, name, user_token_hash, user_token, created_at FROM pebble_users WHERE id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    if row:
         return {
-            "id": data["id"],
-            "name": data.get("name", ""),
-            "email": data.get("email", ""),
-            "user_token": data.get("user_token", "")
+            "id": row["id"],
+            "name": row["name"],
+            "created_at": row["created_at"]
         }
     return None
 
 def create_user(name: str, user_token: str) -> dict | None:
-    """Create a new user in pebble_users collection
+    """Create a new user in local SQLite"""
+    user_id = secrets.token_urlsafe(8)
+    token_hash = hash_token(user_token)
+    created_at = int(time.time())
     
-    user_token field may not be settable on POST due to PocketBase field rules,
-    so we create first then PATCH to set the token.
-    """
-    # Step 1: create user with name only
-    status, data = pb_api_post("pebble_users", {
-        "name": name
-    })
-    
-    if status not in (200, 201):
-        print(f"[pb] create_user (step1) failed: {status} {data}")
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute(
+            "INSERT INTO pebble_users (id, name, user_token_hash, user_token, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, name, token_hash, user_token, created_at)
+        )
+        conn.commit()
+        conn.close()
+        return {
+            "id": user_id,
+            "name": name,
+            "user_token": user_token
+        }
+    except Exception as e:
+        conn.close()
+        print(f"[sqlite] create_user failed: {e}")
         return None
-    
-    user_id = data.get("id")
-    if not user_id:
-        print(f"[pb] create_user: no id returned")
-        return None
-    
-    # Step 2: PATCH to set user_token (POST may not store this field)
-    patch_status, patch_data = pb_api_post("pebble_users", {
-        "user_token": user_token
-    }, record_id=user_id)
-    
-    if patch_status not in (200, 201):
-        print(f"[pb] create_user (step2 set token) failed: {patch_status} {patch_data}")
-        # User was created but token not set - still return partial result
-    
-    return {
-        "id": user_id,
-        "name": name,
-        "user_token": user_token
-    }
-
-def validate_registration_code(code: str) -> bool:
-    """Check if registration code exists and is unused"""
-    status, data = pb_api_get("pebble_reg_codes", params={"filter": f'code="{code}"'})
-    
-    if status == 200 and data.get("items"):
-        # Filter manually for unused codes
-        for item in data["items"]:
-            if not item.get("used", True):
-                return True
-    return False
-
-def mark_reg_code_used(code: str) -> bool:
-    """Mark a registration code as used"""
-    # Find the record first
-    status, data = pb_api_get("pebble_reg_codes", params={"filter": f'code="{code}"'})
-    
-    if status == 200 and data.get("items"):
-        record_id = data["items"][0]["id"]
-        status, _ = pb_api_post("pebble_reg_codes", {"used": True}, record_id=record_id)
-        return status in (200, 204)
-    
-    return False
-
-def generate_registration_code() -> str:
-    """Generate a new registration code in pebble_reg_codes"""
-    code = secrets.token_hex(8)
-    status, data = pb_api_post("pebble_reg_codes", {
-        "code": code,
-        "used": False,
-        "created_at": int(time.time())
-    })
-    
-    if status in (200, 201):
-        return code
-    print(f"[pb] generate_reg_code failed: {status} {data}")
-    return None
-
-def get_reg_code_count() -> int:
-    """Get total registration code count"""
-    status, data = pb_api_get("pebble_reg_codes")
-    if status == 200:
-        return data.get("totalItems", 0)
-    return 0
 
 def get_user_count() -> int:
-    """Get total user count"""
-    status, data = pb_api_get("pebble_users")
-    if status == 200:
-        return data.get("totalItems", 0)
-    return 0
+    """Get total user count from SQLite"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) as cnt FROM pebble_users")
+    count = c.fetchone()["cnt"]
+    conn.close()
+    return count
 
 def get_all_users() -> list:
-    """Get all users from pebble_users"""
-    status, data = pb_api_get("pebble_users")
-    if status == 200:
-        return data.get("items", [])
-    return []
+    """Get all users from SQLite"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, name, user_token, user_token_hash, created_at FROM pebble_users ORDER BY created_at DESC")
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
 def delete_user(user_id: str) -> bool:
-    """Delete a user"""
-    status, _ = pb_api_delete("pebble_users", user_id)
-    return status in (200, 204)
+    """Delete a user from SQLite"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM pebble_users WHERE id = ?", (user_id,))
+    affected = c.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
 
 # ============================================================
 # Admin Management via PocketBase (pebble_admins collection)
@@ -641,44 +612,23 @@ def admin_info():
 @app.route("/api/v1/admin/check", methods=["GET"])
 @require_admin
 def admin_check():
-    """Check PocketBase write access and PB_API_TOKEN status"""
-    pb_url = PB_URL
-    
-    # Test if we can write to pebble_users
-    test_token = secrets.token_urlsafe(8)
-    status, data = pb_api_post("pebble_users", {
-        "name": "__ping_test__",
-        "user_token": test_token
-    })
-    
-    # Clean up test record if created
-    if status in (200, 201) and data.get("id"):
-        pb_api_delete("pebble_users", data["id"])
-        write_ok = True
-    elif status == 403:
-        write_ok = False
-    else:
-        write_ok = False
-    
-    return jsonify({
-        "pb_url": pb_url,
-        "pb_api_token_configured": bool(PB_API_TOKEN),
-        "write_ok": write_ok,
-        "write_error": "403 Forbidden - 需要 PocketBase API Token (superuser权限)" if status == 403 else (data.get("message", "") if status != 201 else ""),
-        "http_status": status
-    }), 200
+    """Check SQLite connectivity"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM pebble_users")
+        c.execute("SELECT COUNT(*) FROM oc_instances")
+        conn.close()
+        return jsonify({
+            "db_ok": True,
+            "message": "SQLite connected, user management via local database"
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "db_ok": False,
+            "message": str(e)
+        }), 500
 
-@app.route("/api/v1/admin/registration-code", methods=["POST"])
-@require_admin
-def regenerate_registration_code():
-    """Generate a new registration code"""
-    new_code = generate_registration_code()
-    if new_code:
-        config["admin"]["registration_code"] = new_code
-        with open(CONFIG_PATH, 'w') as f:
-            yaml.dump(config, f)
-        return jsonify({"registration_code": new_code}), 200
-    return jsonify({"error": "Failed to generate code"}), 500
 
 @app.route("/api/v1/admin/users", methods=["GET"])
 @require_admin
@@ -717,19 +667,15 @@ def list_users():
     result = []
     for u in users:
         uid = u["id"]
-        created = u.get("created", "")
-        if created and isinstance(created, str):
-            # PocketBase returns created ISO string
-            try:
-                from datetime import datetime
-                dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                created = dt.strftime("%Y-%m-%d %H:%M")
-            except:
-                pass
+        created = u.get("created_at", 0)
+        if isinstance(created, int) and created > 0:
+            from datetime import datetime
+            created = datetime.fromtimestamp(created).strftime("%Y-%m-%d %H:%M")
+        else:
+            created = ""
         result.append({
             "id": uid,
             "name": u.get("name", ""),
-            "email": u.get("email", ""),
             "created_at": created,
             "user_token": u.get("user_token", ""),
             "instances": user_instances.get(uid, []),
