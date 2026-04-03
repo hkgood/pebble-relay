@@ -23,7 +23,7 @@
         .header h1 { font-size: 20px; }
         .header-right { display: flex; gap: 10px; align-items: center; }
         .container {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 30px 40px;
         }
@@ -49,8 +49,6 @@
         }
         input:focus { outline: none; border-color: #4facfe; }
         button {
-            width: 100%;
-            padding: 14px;
             border: none;
             border-radius: 10px;
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
@@ -62,9 +60,25 @@
         }
         button:hover { opacity: 0.9; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            padding: 10px 20px;
+            font-size: 14px;
+        }
+        .btn-danger {
+            background: rgba(255,82,82,0.2);
+            color: #ff6b6b;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
         .stats {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -97,41 +111,83 @@
             font-size: 16px;
             color: #aaa;
         }
-        .reg-code-box {
-            display: flex;
-            gap: 10px;
-            align-items: center;
+        .section h3 .badge {
+            font-size: 12px;
+            background: rgba(79,172,254,0.2);
+            color: #4facfe;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
         }
-        .reg-code-box input {
-            flex: 1;
-            font-family: monospace;
-            font-size: 14px;
+        .create-user-form {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: end;
         }
-        .btn-secondary {
-            background: rgba(255,255,255,0.1);
-            width: auto;
-            padding: 14px 24px;
-        }
-        .btn-danger {
-            background: rgba(255,82,82,0.2);
-            color: #ff6b6b;
-            width: auto;
-            padding: 8px 16px;
-            font-size: 14px;
+        .create-user-form input {
+            margin-bottom: 0;
         }
         .user-list { margin-top: 16px; }
         .user-item {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 8px;
+        }
+        .user-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        .user-info .name { font-weight: 600; font-size: 15px; }
+        .user-info .id { font-size: 12px; color: #666; font-family: monospace; margin-top: 4px; }
+        .user-info .created { font-size: 12px; color: #555; margin-top: 4px; }
+        .user-actions { display: flex; gap: 8px; }
+        .instance-list {
+            margin-top: 8px;
+            padding-left: 16px;
+            border-left: 2px solid rgba(255,255,255,0.1);
+        }
+        .instance-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-            margin-bottom: 8px;
+            padding: 6px 0;
+            font-size: 13px;
+            color: #888;
         }
-        .user-item .name { font-weight: 500; }
-        .user-item .email { font-size: 13px; color: #888; }
-        .user-item .id { font-size: 12px; color: #666; font-family: monospace; }
+        .instance-item .inst-name { color: #ccc; }
+        .instance-item .inst-id { font-family: monospace; font-size: 11px; color: #555; }
+        .no-instances { font-size: 12px; color: #555; padding: 4px 0; }
+        .token-display {
+            background: rgba(0,255,136,0.1);
+            border: 1px solid rgba(0,255,136,0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .token-display .token-label {
+            font-size: 12px;
+            color: #0f0;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .token-display .token-value {
+            font-family: monospace;
+            font-size: 13px;
+            word-break: break-all;
+            color: #fff;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 6px;
+        }
+        .token-display .token-warning {
+            font-size: 12px;
+            color: #ff6b6b;
+            margin-top: 8px;
+        }
         .logout-btn {
             background: rgba(255,82,82,0.2);
             color: #ff6b6b;
@@ -167,12 +223,23 @@
         }
         .toast.show { opacity: 1; }
         .toast.error { background: rgba(255,82,82,0.9); color: #fff; }
+        .info-box {
+            background: rgba(79,172,254,0.1);
+            border: 1px solid rgba(79,172,254,0.2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 20px;
+        }
+        .info-box strong { color: #4facfe; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>⚙️ Pebble Relay 管理后台</h1>
         <div class="header-right">
+            <span id="serverUrl" style="font-size:12px;color:#555;"></span>
             <span id="adminName" class="hidden"></span>
             <button id="logoutBtn" class="logout-btn hidden" onclick="logout()">退出</button>
         </div>
@@ -182,18 +249,22 @@
     <div id="loginSection" class="login-box">
         <h2>管理员登录</h2>
         <div class="form-group">
-            <label>用户名</label>
-            <input type="text" id="username" placeholder="管理员邮箱" value="rocky.hk@gmail.com">
+            <label>管理员邮箱</label>
+            <input type="text" id="username" placeholder="pebble_relay@admin.com" value="rocky.hk@gmail.com">
         </div>
         <div class="form-group">
             <label>密码</label>
             <input type="password" id="password" placeholder="管理员密码">
         </div>
-        <button onclick="login()">登录</button>
+        <button class="btn-primary" onclick="login()">登录</button>
     </div>
 
     <!-- Dashboard -->
     <div id="dashboardSection" class="container hidden">
+        <div class="info-box">
+            <strong>用户 Token 说明：</strong>创建用户后请立即复制 Token，此 Token 仅显示一次，无法找回。用户需将此 Token 输入到 watch-claw 插件或 iOS/App 应用中完成绑定。
+        </div>
+
         <div class="stats">
             <div class="stat-card">
                 <div class="number" id="statUsers">-</div>
@@ -207,22 +278,26 @@
                 <div class="number" id="statWatches">-</div>
                 <div class="label">手表数</div>
             </div>
-            <div class="stat-card">
-                <div class="number" id="statCodes">-</div>
-                <div class="label">注册码</div>
+        </div>
+
+        <div class="section">
+            <h3>➕ 创建用户 <span class="badge">直接注册</span></h3>
+            <div class="create-user-form">
+                <div>
+                    <label>用户名称</label>
+                    <input type="text" id="newUserName" placeholder="例如：张三的Watch" onkeypress="if(event.key==='Enter')createUser()">
+                </div>
+                <button class="btn-secondary" onclick="createUser()" style="padding: 14px 24px;">创建</button>
+            </div>
+            <div id="tokenDisplay" class="token-display hidden">
+                <div class="token-label">✅ 用户创建成功 — Token 仅显示一次，请立即复制保存：</div>
+                <div class="token-value" id="tokenValue"></div>
+                <div class="token-warning">⚠️ 此 Token 无法找回，请妥善保管！</div>
             </div>
         </div>
 
         <div class="section">
-            <h3>🔑 生成注册码</h3>
-            <div class="reg-code-box">
-                <input type="text" id="newRegCode" readonly placeholder="点击按钮生成注册码">
-                <button class="btn-secondary" onclick="generateCode()">生成</button>
-            </div>
-        </div>
-
-        <div class="section">
-            <h3>👥 用户列表</h3>
+            <h3>👥 用户列表 <span class="badge" id="userCountBadge">0</span></h3>
             <div id="userList" class="user-list">
                 <p style="color:#666;text-align:center;padding:20px;">加载中...</p>
             </div>
@@ -235,12 +310,14 @@
         let adminToken = localStorage.getItem('pebble_admin_token') || '';
         let relayUrl = localStorage.getItem('pebble_relay_url') || 'http://115.29.162.18:8977';
 
+        document.getElementById('serverUrl').textContent = relayUrl;
+
         function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
             t.textContent = msg;
             t.className = 'toast' + (isError ? ' error' : '');
             t.classList.add('show');
-            setTimeout(() => t.classList.remove('show'), 3000);
+            setTimeout(() => t.classList.remove('show'), 4000);
         }
 
         async function login() {
@@ -253,7 +330,6 @@
             }
             
             try {
-                // Try pebble_admins auth
                 const resp = await fetch(`${relayUrl}/api/collections/pebble_admins/auth-with-password`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -280,6 +356,7 @@
             document.getElementById('loginSection').classList.remove('hidden');
             document.getElementById('dashboardSection').classList.add('hidden');
             document.getElementById('logoutBtn').classList.add('hidden');
+            document.getElementById('adminName').classList.add('hidden');
         }
 
         async function showDashboard() {
@@ -300,13 +377,50 @@
                     document.getElementById('statUsers').textContent = data.user_count || 0;
                     document.getElementById('statInstances').textContent = data.instance_count || 0;
                     document.getElementById('statWatches').textContent = data.watch_count || 0;
-                    document.getElementById('statCodes').textContent = data.registration_code ? '✓' : '-';
-                    if (data.registration_code) {
-                        document.getElementById('newRegCode').value = data.registration_code;
-                    }
                 }
             } catch (e) {
                 console.error(e);
+            }
+        }
+
+        async function createUser() {
+            const name = document.getElementById('newUserName').value.trim();
+            if (!name) {
+                showToast('请输入用户名称', true);
+                return;
+            }
+
+            const btn = document.querySelector('.create-user-form button');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>创建中...';
+
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ name: name })
+                });
+
+                const data = await resp.json();
+                
+                if (resp.ok && data.user_token) {
+                    document.getElementById('tokenValue').textContent = data.user_token;
+                    document.getElementById('tokenDisplay').classList.remove('hidden');
+                    document.getElementById('newUserName').value = '';
+                    showToast('用户创建成功');
+                    await loadUsers();
+                    await loadStats();
+                } else {
+                    showToast(data.error || '创建失败', true);
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, true);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '创建';
             }
         }
 
@@ -318,17 +432,39 @@
                 });
                 if (resp.ok) {
                     const data = await resp.json();
+                    document.getElementById('userCountBadge').textContent = data.total || 0;
+                    
                     if (data.users && data.users.length) {
-                        list.innerHTML = data.users.map(u => `
-                            <div class="user-item">
-                                <div>
-                                    <div class="name">${u.name || '未命名'}</div>
-                                    <div class="email">${u.email || '-'}</div>
-                                    <div class="id">ID: ${u.id}</div>
+                        list.innerHTML = data.users.map(u => {
+                            const instances = u.instances || [];
+                            const instHtml = instances.length 
+                                ? instances.map(i => `
+                                    <div class="instance-item">
+                                        <span class="inst-name">${i.name || '未命名实例'}</span>
+                                        <span class="inst-id">${i.id}</span>
+                                    </div>
+                                `).join('')
+                                : '<div class="no-instances">暂无实例</div>';
+                            
+                            return `
+                                <div class="user-item">
+                                    <div class="user-header">
+                                        <div class="user-info">
+                                            <div class="name">${u.name || '未命名'}</div>
+                                            <div class="id">ID: ${u.id}</div>
+                                            <div class="created">创建: ${u.created_at || '-'}</div>
+                                        </div>
+                                        <div class="user-actions">
+                                            <button class="btn-danger btn-sm" onclick="deleteUser('${u.id}')">删除</button>
+                                        </div>
+                                    </div>
+                                    <div class="instance-list">
+                                        <div style="font-size:11px;color:#555;margin-bottom:4px;">实例 (${instances.length})</div>
+                                        ${instHtml}
+                                    </div>
                                 </div>
-                                <button class="btn-danger" onclick="deleteUser('${u.id}')">删除</button>
-                            </div>
-                        `).join('');
+                            `;
+                        }).join('');
                     } else {
                         list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">暂无用户</p>';
                     }
@@ -340,27 +476,8 @@
             }
         }
 
-        async function generateCode() {
-            try {
-                const resp = await fetch(`${relayUrl}/api/v1/admin/registration-code`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${adminToken}` }
-                });
-                if (resp.ok) {
-                    const data = await resp.json();
-                    document.getElementById('newRegCode').value = data.registration_code;
-                    document.getElementById('statCodes').textContent = '✓';
-                    showToast('注册码已生成');
-                } else {
-                    showToast('生成失败', true);
-                }
-            } catch (e) {
-                showToast('网络错误', true);
-            }
-        }
-
         async function deleteUser(userId) {
-            if (!confirm('确定删除该用户？')) return;
+            if (!confirm('确定删除该用户？此操作不可恢复。')) return;
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/users/${userId}`, {
                     method: 'DELETE',
@@ -371,7 +488,8 @@
                     await loadUsers();
                     await loadStats();
                 } else {
-                    showToast('删除失败', true);
+                    const data = await resp.json();
+                    showToast(data.error || '删除失败', true);
                 }
             } catch (e) {
                 showToast('网络错误', true);

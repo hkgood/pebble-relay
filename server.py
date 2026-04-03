@@ -585,13 +585,11 @@ def admin_info():
     conn.close()
     
     user_count = get_user_count()
-    reg_code = config.get("admin", {}).get("registration_code", "")
     
     return jsonify({
         "user_count": user_count,
         "instance_count": instance_count,
         "watch_count": watch_count,
-        "registration_code": reg_code,
         "pocketbase_url": PB_URL,
         "uptime": get_timestamp()
     }), 200
@@ -611,12 +609,69 @@ def regenerate_registration_code():
 @app.route("/api/v1/admin/users", methods=["GET"])
 @require_admin
 def list_users():
-    """List all users"""
+    """List all users with their instances"""
     users = get_all_users()
+    
+    # Get instances per user from local SQLite
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, name, user_id FROM oc_instances")
+    all_instances = c.fetchall()
+    conn.close()
+    
+    user_instances = {}
+    for inst in all_instances:
+        uid = inst["user_id"]
+        if uid not in user_instances:
+            user_instances[uid] = []
+        user_instances[uid].append({"id": inst["id"], "name": inst["name"]})
+    
+    result = []
+    for u in users:
+        uid = u["id"]
+        created = u.get("created", "")
+        if created and isinstance(created, str):
+            # PocketBase returns created ISO string
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                created = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+        result.append({
+            "id": uid,
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "created_at": created,
+            "instances": user_instances.get(uid, [])
+        })
+    
     return jsonify({
-        "users": [{"id": u["id"], "name": u.get("name", ""), "email": u.get("email", "")} for u in users],
-        "total": len(users)
+        "users": result,
+        "total": len(result)
     }), 200
+
+
+@app.route("/api/v1/admin/users", methods=["POST"])
+@require_admin
+def create_user_admin():
+    """Create a new user directly (admin only, no registration code needed)"""
+    data = request.get_json() or {}
+    name = data.get("name", "")
+    
+    user_token = secrets.token_urlsafe(32)
+    user = create_user(name, user_token)
+    
+    if not user:
+        return jsonify({"error": "Failed to create user"}), 500
+    
+    return jsonify({
+        "ok": True,
+        "user_id": user["id"],
+        "user_token": user_token,
+        "name": name,
+        "message": "Save this token securely - it cannot be recovered"
+    }), 201
 
 @app.route("/api/v1/admin/users/<user_id>", methods=["DELETE"])
 @require_admin
