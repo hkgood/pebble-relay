@@ -483,37 +483,35 @@ def oc_status():
     })
     if status not in (200, 201):
         return jsonify({"error": "Failed to update status"}), 500
-    return jsonify({"ok": True}), 200
+    # Persist status to PocketBase relay_status collection (upsert)
+    status_payload = {
+        "instance_id": instance["instance_id"],
+        "ok": data.get("ok", False),
+        "uptime": data.get("uptime", 0),
+        "cpu": data.get("cpu", 0),
+        "memory": data.get("memory", 0),
+        "channels": json.dumps(data.get("channels", [])),
+        "lastUpdate": data.get("lastUpdate", int(time.time())),
+        "version": data.get("version", ""),
+        "currentModel": data.get("currentModel", ""),
+        "currentAgent": data.get("currentAgent", ""),
+        "sessionCount": data.get("sessionCount", 0),
+        "channelCount": data.get("channelCount", 0),
+        "nodeCount": data.get("nodeCount", 0),
+        "onlineChannels": json.dumps(data.get("onlineChannels", [])),
+        "totalTokenUsage": data.get("totalTokenUsage", 0),
+    }
+    # Try to upsert: check if record exists by instance_id
+    _, existing = pb_get("relay_status", params={"filter": f'instance_id="{instance["instance_id"]}"'})
+    existing_items = existing.get("items", []) if existing else []
+    if existing_items:
+        # Update existing record
+        pb_post("relay_status", status_payload, record_id=existing_items[0]["id"])
+    else:
+        # Create new record
+        pb_post("relay_status", status_payload)
 
-@app.route("/api/v1/oc/status/<instance_id>", methods=["GET"])
-def oc_get_status(instance_id):
-    """Query the last known status of an instance (reads from relay_status table)"""
-    # Verify the instance exists by querying PocketBase
-    _, instance_result = pb_get("oc_instances", params={"filter": f'id="{instance_id}"'})
-    instance_items = instance_result.get("items", []) if instance_result else []
-    if not instance_items:
-        return jsonify({"error": "Instance not found"}), 404
-    instance = instance_items[0]
-    
-    # Get last status from relay_status table
-    filter_q = f'instance_id="{instance_id}"'
-    _, result = pb_get("relay_status", params={"filter": filter_q})
-    items = result.get("items", []) if result else []
-    
-    if not items:
-        return jsonify({"ok": False, "instance_id": instance_id, "name": instance.get("name")}), 200
-    
-    status = items[0]
-    return jsonify({
-        "ok": bool(status.get("ok")),
-        "instance_id": instance_id,
-        "name": instance.get("name"),
-        "uptime": status.get("uptime", 0),
-        "cpu": status.get("cpu", 0),
-        "memory": status.get("memory", 0),
-        "channels": status.get("channels", ""),
-        "lastUpdate": status.get("lastUpdate", 0),
-    }), 200
+    return jsonify({"ok": True}), 200
 
 @app.route("/api/v1/oc/thinking", methods=["POST"])
 def oc_thinking():
