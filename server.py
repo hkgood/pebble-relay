@@ -485,6 +485,36 @@ def oc_status():
         return jsonify({"error": "Failed to update status"}), 500
     return jsonify({"ok": True}), 200
 
+@app.route("/api/v1/oc/status/<instance_id>", methods=["GET"])
+def oc_get_status(instance_id):
+    """Query the last known status of an instance (reads from relay_status table)"""
+    # Verify the instance exists by querying PocketBase
+    _, instance_result = pb_get("oc_instances", params={"filter": f'id="{instance_id}"'})
+    instance_items = instance_result.get("items", []) if instance_result else []
+    if not instance_items:
+        return jsonify({"error": "Instance not found"}), 404
+    instance = instance_items[0]
+    
+    # Get last status from relay_status table
+    filter_q = f'instance_id="{instance_id}"'
+    _, result = pb_get("relay_status", params={"filter": filter_q})
+    items = result.get("items", []) if result else []
+    
+    if not items:
+        return jsonify({"ok": False, "instance_id": instance_id, "name": instance.get("name")}), 200
+    
+    status = items[0]
+    return jsonify({
+        "ok": bool(status.get("ok")),
+        "instance_id": instance_id,
+        "name": instance.get("name"),
+        "uptime": status.get("uptime", 0),
+        "cpu": status.get("cpu", 0),
+        "memory": status.get("memory", 0),
+        "channels": status.get("channels", ""),
+        "lastUpdate": status.get("lastUpdate", 0),
+    }), 200
+
 @app.route("/api/v1/oc/thinking", methods=["POST"])
 def oc_thinking():
     """Push thinking status"""
