@@ -289,7 +289,13 @@
             margin-bottom: 20px;
         }
         .info-box strong { color: #4facfe; }
+        .qr-section { margin-top: 8px; text-align: center; }
+        .qr-section canvas { display: inline-block; border: 1px solid #333; border-radius: 4px; }
+        .token-full { font-family: monospace; font-size: 11px; word-break: break-all; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; display: none; margin-top: 4px; }
+        .token-full.show { display: block; }
+        .token-row-main { display: flex; gap: 8px; align-items: center; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 </head>
 <body>
     <div class="header">
@@ -564,10 +570,13 @@
                                     </div>
                                     <div class="token-section">
                                         <div class="token-label">Relay Token</div>
-                                        <div class="token-row">
-                                            <div class="token-value">${maskedToken}</div>
+                                        <div class="token-row-main">
+                                            <button class="copy-btn" onclick="toggleUserToken(this, '${token}')">显示</button>
                                             <button class="copy-btn" onclick="copyUserToken('${token}', this)">复制</button>
+                                            <button class="copy-btn danger" onclick="regenerateUserToken('${u.id}', this)">重置</button>
                                         </div>
+                                        <div class="token-full" id="token-full-${u.id}">${token}</div>
+                                        <div class="qr-section" id="qr-${u.id}"></div>
                                     </div>
                                     <div class="instance-list">
                                         <div style="font-size:11px;color:#555;margin-bottom:4px;">实例 (${instances.length})</div>
@@ -601,6 +610,62 @@
                     btn.classList.remove('copied');
                 }, 2000);
             });
+        }
+
+        function toggleUserToken(btn, token) {
+            const userId = btn.closest('.token-section').querySelector('.token-full').id.replace('token-full-', '');
+            const fullDiv = document.getElementById('token-full-' + userId);
+            const qrDiv = document.getElementById('qr-' + userId);
+            if (fullDiv.classList.contains('show')) {
+                fullDiv.classList.remove('show');
+                qrDiv.innerHTML = '';
+                btn.textContent = '显示';
+            } else {
+                fullDiv.classList.add('show');
+                // Generate QR code
+                qrDiv.innerHTML = '';
+                if (token) {
+                    try {
+                        var qr = qrcode(0, 'M');
+                        qr.addData(token);
+                        qr.make();
+                        qrDiv.innerHTML = qr.createSvgTag({ cellsize: 3, margin: 2 });
+                    } catch(e) {
+                        qrDiv.innerHTML = '<span style="font-size:11px;color:#ff6b6b;">QR生成失败</span>';
+                    }
+                }
+                btn.textContent = '隐藏';
+            }
+        }
+
+        async function regenerateUserToken(userId, btn) {
+            if (!confirm('确定要重置该用户的Token？旧Token将失效，watch-claw需要重新配置。')) return;
+            btn.disabled = true;
+            btn.textContent = '重置中...';
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/users/${userId}/regenerate-token`, {
+                    method: 'POST',
+                    headers: { 'X-Admin-Token': adminPassword }
+                });
+                const data = await resp.json();
+                if (resp.ok && data.ok) {
+                    showToast('Token已重置');
+                    // Update the displayed token
+                    const fullDiv = document.getElementById('token-full-' + userId);
+                    const qrDiv = document.getElementById('qr-' + userId);
+                    fullDiv.textContent = data.user_token;
+                    qrDiv.innerHTML = '';
+                    btn.closest('.token-section').querySelector('.copy-btn').textContent = '显示';
+                } else {
+                    showToast(data.error || '重置失败', true);
+                    btn.textContent = '重置';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                showToast('网络错误', true);
+                btn.textContent = '重置';
+                btn.disabled = false;
+            }
         }
 
         function copyToken() {

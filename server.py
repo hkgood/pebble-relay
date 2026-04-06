@@ -285,6 +285,90 @@ def list_users():
     } for u in items]
     return jsonify({"users": result, "total": len(result)}), 200
 
+@app.route("/api/v1/register", methods=["POST"])
+def register():
+    """Public user registration - creates relay_token for user in PocketBase relay_users"""
+    data = request.get_json() or {}
+    name = data.get("name", "Unnamed User")
+    email = data.get("email", "")
+    password = data.get("password", "")
+    
+    # Check if registration code is required
+    reg_code = data.get("registration_code", "")
+    required_code = config.get("registration", {}).get("code", "")
+    if required_code and reg_code != required_code:
+        return jsonify({"error": "Invalid registration code"}), 403
+    
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
+    
+    # Check if email already exists
+    _, existing = pb_get("relay_users", params={"filter": f'email="{email}"'})
+    if existing and existing.get("items"):
+        return jsonify({"error": "Email already registered"}), 409
+    
+    # Generate relay_token
+    relay_token = secrets.token_urlsafe(32)
+    
+    # Use direct PocketBase auth collection API for user creation
+    try:
+        resp = requests.post(
+            f"{PB_URL}/api/collections/relay_users/records",
+            json={
+                "email": email,
+                "password": password,
+                "passwordConfirm": password,
+                "name": name,
+                "relay_token": relay_token
+            },
+            timeout=10
+        )
+        if resp.status_code not in (200, 201):
+            err = resp.json()
+            return jsonify({"error": err.get("message", "Failed to create user")}), resp.status_code
+        result = resp.json()
+        return jsonify({
+            "ok": True,
+            "user_id": result.get("id"),
+            "user_token": relay_token
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/v1/user/token", methods=["GET"])
+@app.route("/api/v1/user/token", methods=["POST"])
+def user_token():
+    """Get or regenerate user's relay_token. Requires email in body for lookup."""
+    data = request.get_json() or {}
+    email = data.get("email", "")
+    regenerate = data.get("regenerate", False)
+    
+    if not email:
+        return jsonify({"error": "Email required"}), 400
+    
+    # Find user by email
+    _, result = pb_get("relay_users", params={"filter": f'email="{email}"'})
+    items = result.get("items", []) if result else []
+    if not items:
+        return jsonify({"error": "User not found"}), 404
+    
+    user = items[0]
+    user_id = user.get("id")
+    
+    if regenerate:
+        new_token = secrets.token_urlsafe(32)
+        _, updated = pb_post("relay_users", {"relay_token": new_token}, record_id=user_id)
+        if updated and updated.get("id"):
+            return jsonify({"ok": True, "user_token": new_token})
+        return jsonify({"error": "Failed to update token"}), 500
+    
+    # Return existing token
+    return jsonify({
+        "ok": True,
+        "user_id": user_id,
+        "user_token": user.get("relay_token", "")
+    })
+
 @app.route("/api/v1/admin/users", methods=["POST"])
 @require_admin
 def create_user():
@@ -318,6 +402,16 @@ def delete_user(user_id):
     for w in (watches.get("items", []) if watches else []):
         pb_delete("watch_devices", w["id"])
     return jsonify({"ok": True}), 200
+
+@app.route("/api/v1/admin/users/<user_id>/regenerate-token", methods=["POST"])
+@require_admin
+def regenerate_user_token(user_id):
+    """Regenerate a user's relay_token"""
+    new_token = secrets.token_urlsafe(32)
+    status, result = pb_post("relay_users", {"relay_token": new_token}, record_id=user_id)
+    if status not in (200, 201):
+        return jsonify({"error": result.get("message", "Failed to update token")}), 500
+    return jsonify({"ok": True, "user_token": new_token})
 
 # ============================================================
 # OpenClaw Instance API
