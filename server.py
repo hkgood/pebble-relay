@@ -513,6 +513,48 @@ def oc_status():
 
     return jsonify({"ok": True}), 200
 
+@app.route("/api/v1/oc/status/<instance_id>", methods=["GET"])
+def oc_status_get(instance_id):
+    """Get latest status for an instance (used by App)"""
+    # Find instance by instance_id (not PocketBase id)
+    _, instances = pb_get("oc_instances", params={"perPage": 500})
+    if not instances:
+        return jsonify({"error": "Instance not found"}), 404
+    instance = None
+    for inst in instances.get("items", []):
+        if inst.get("id") == instance_id:
+            instance = inst
+            break
+    if not instance:
+        return jsonify({"error": "Instance not found"}), 404
+    # Get latest status from relay_status
+    filter_enc = requests.utils.quote(f'instance_id="{instance_id}"')
+    _, status_data = pb_get("relay_status", params={"filter": filter_enc, "sort": "-lastUpdate", "perPage": 1})
+    items = status_data.get("items", []) if status_data else []
+    if not items:
+        return jsonify({"ok": False, "error": "No status data"}), 200
+    st = items[0]
+    channels = st.get("channels", "")
+    if isinstance(channels, str):
+        channels = [c for c in channels.split(",") if c]
+    return jsonify({
+        "ok": bool(st.get("ok")),
+        "name": instance.get("name", ""),
+        "uptime": st.get("uptime", 0),
+        "cpu": st.get("cpu", 0),
+        "memory": st.get("memory", 0),
+        "channels": channels,
+        "lastUpdate": st.get("lastUpdate", 0),
+        "version": st.get("version", ""),
+        "currentModel": st.get("currentModel", ""),
+        "currentAgent": st.get("currentAgent", ""),
+        "sessionCount": st.get("sessionCount", 0),
+        "channelCount": st.get("channelCount", 0),
+        "nodeCount": st.get("nodeCount", 0),
+        "onlineChannels": st.get("onlineChannels", []),
+        "totalTokenUsage": st.get("totalTokenUsage", 0),
+    }), 200
+
 @app.route("/api/v1/oc/thinking", methods=["POST"])
 def oc_thinking():
     """Push thinking status"""
