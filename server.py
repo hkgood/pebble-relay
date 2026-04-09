@@ -199,7 +199,7 @@ def get_user_by_relay_token(relay_token: str) -> dict | None:
 # ============================================================
 # Config Init
 # ============================================================
-REL_DEFAULT_PASSWORD = os.environ.get("RELAY_ADMIN_PASSWORD", "123456")
+REL_DEFAULT_PASSWORD = os.environ.get("RELAY_ADMIN_PASSWORD", "pebblereply")
 
 @app.route("/api/v1/admin/setup", methods=["POST"])
 def admin_setup():
