@@ -479,19 +479,7 @@ def oc_status():
         "memory": data.get("memory", 0),
         "cpu": data.get("cpu", 0),
         "last_message_ago": data.get("last_message_ago", 0),
-        "lastUpdate": lastUpdate
-    })
-    if status not in (200, 201):
-        return jsonify({"error": "Failed to update status"}), 500
-    # Persist status to PocketBase relay_status collection (upsert)
-    status_payload = {
-        "instance_id": instance["instance_id"],
-        "ok": data.get("ok", False),
-        "uptime": data.get("uptime", 0),
-        "cpu": data.get("cpu", 0),
-        "memory": data.get("memory", 0),
-        "channels": json.dumps(data.get("channels", [])),
-        "lastUpdate": data.get("lastUpdate", int(time.time())),
+        "lastUpdate": lastUpdate,
         "version": data.get("version", ""),
         "currentModel": data.get("currentModel", ""),
         "currentAgent": data.get("currentAgent", ""),
@@ -499,17 +487,10 @@ def oc_status():
         "channelCount": data.get("channelCount", 0),
         "nodeCount": data.get("nodeCount", 0),
         "onlineChannels": json.dumps(data.get("onlineChannels", [])),
-        "totalTokenUsage": data.get("totalTokenUsage", 0),
-    }
-    # Try to upsert: check if record exists by instance_id
-    _, existing = pb_get("relay_status", params={"filter": f'instance_id="{instance["instance_id"]}"'})
-    existing_items = existing.get("items", []) if existing else []
-    if existing_items:
-        # Update existing record
-        pb_post("relay_status", status_payload, record_id=existing_items[0]["id"])
-    else:
-        # Create new record
-        pb_post("relay_status", status_payload)
+        "totalTokenUsage": data.get("totalTokenUsage", 0)
+    })
+    if status not in (200, 201):
+        return jsonify({"error": "Failed to update status"}), 500
 
     return jsonify({"ok": True}), 200
 
