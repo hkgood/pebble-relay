@@ -579,6 +579,8 @@ def oc_instances():
             "nodeCount": st.get("nodeCount", 0),
             "onlineChannels": st.get("onlineChannels", []),
             "totalTokenUsage": st.get("totalTokenUsage", 0),
+            "thinking": bool(st.get("thinking")),
+            "lastMessageAgo": st.get("last_message_ago", 0),
         })
 
     return jsonify({"instances": result}), 200
