@@ -459,15 +459,26 @@ def get_instance_by_token(instance_token: str) -> dict | None:
 
 @app.route("/api/v1/oc/status", methods=["POST"])
 def oc_status():
-    """Push OpenClaw status (upsert - update existing or create)"""
+    """Push OpenClaw status for an instance.
+    
+    Uses X-Relay-Token (user's relay_token) to authenticate.
+    Instance is identified by instance_id in JSON body.
+    Auto-creates oc_instances record if not found (for simple deployment).
+    """
     try:
-        instance_token = request.headers.get("X-Instance-Token", "")
-        if not instance_token:
-            return jsonify({"error": "Missing X-Instance-Token"}), 401
-        instance = get_instance_by_token(instance_token)
-        if not instance:
-            return jsonify({"error": "Invalid instance token"}), 401
+        relay_token = request.headers.get("X-Relay-Token", "")
+        if not relay_token:
+            # Fallback to old X-Instance-Token for backwards compat
+            relay_token = request.headers.get("X-Instance-Token", "")
+        if not relay_token:
+            return jsonify({"error": "Missing X-Relay-Token (or X-Instance-Token)"}), 401
+        user = get_user_by_relay_token(relay_token)
+        if not user:
+            return jsonify({"error": "Invalid relay_token"}), 401
         data = request.get_json() or {}
+        instance_id = data.get("instance_id", "")
+        if not instance_id:
+            return jsonify({"error": "Missing instance_id in body"}), 400
         channels = data.get("channels", [])
         if isinstance(channels, list):
             channels = ",".join(channels)
@@ -478,9 +489,9 @@ def oc_status():
         elif not online_channels:
             online_channels = "[]"
         # Upsert relay_status by instance_id
-        filter_q = f'instance_id="{instance["id"]}"'
+        filter_q = f'instance_id="{instance_id}"'
         status, result = pb_upsert("relay_status", filter_q, {
-            "instance_id": instance["id"],
+            "instance_id": instance_id,
             "ok": bool(data.get("ok", False)),
             "uptime": int(data.get("uptime", 0)),
             "channels": str(channels),
