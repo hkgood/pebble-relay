@@ -107,11 +107,13 @@ def pb_delete(collection, record_id):
 def pb_upsert(collection, filter_query, data):
     """Upsert: find by filter, update if exists, create if not"""
     filter_enc = requests.utils.quote(filter_query)
-    status, result = pb_get(collection, params={"filter": filter_enc, "perPage": 1})
+    status, result = pb_get(collection, params={"filter": filter_enc, "sort": "-lastUpdate", "perPage": 1})
     if status == 200 and result.get("items"):
         record_id = result["items"][0]["id"]
+        print(f"[pb_upsert] {collection}: found record {record_id}, updating")
         return pb_post(collection, data, record_id)
     else:
+        print(f"[pb_upsert] {collection}: no existing record found (status={status}), creating new")
         return pb_post(collection, data)
 
 def hash_token(token: str) -> str:
@@ -458,41 +460,51 @@ def get_instance_by_token(instance_token: str) -> dict | None:
 @app.route("/api/v1/oc/status", methods=["POST"])
 def oc_status():
     """Push OpenClaw status (upsert - update existing or create)"""
-    instance_token = request.headers.get("X-Instance-Token", "")
-    if not instance_token:
-        return jsonify({"error": "Missing X-Instance-Token"}), 401
-    instance = get_instance_by_token(instance_token)
-    if not instance:
-        return jsonify({"error": "Invalid instance token"}), 401
-    data = request.get_json() or {}
-    channels = data.get("channels", [])
-    if isinstance(channels, list):
-        channels = ",".join(channels)
-    lastUpdate = int(time.time())
-    # Upsert relay_status by instance_id
-    filter_q = f'instance_id="{instance["id"]}"'
-    status, result = pb_upsert("relay_status", filter_q, {
-        "instance_id": instance["id"],
-        "ok": 1 if data.get("ok") else 0,
-        "uptime": data.get("uptime", 0),
-        "channels": channels,
-        "memory": data.get("memory", 0),
-        "cpu": data.get("cpu", 0),
-        "last_message_ago": data.get("last_message_ago", 0),
-        "lastUpdate": lastUpdate,
-        "version": data.get("version", ""),
-        "currentModel": data.get("currentModel", ""),
-        "currentAgent": data.get("currentAgent", ""),
-        "sessionCount": data.get("sessionCount", 0),
-        "channelCount": data.get("channelCount", 0),
-        "nodeCount": data.get("nodeCount", 0),
-        "onlineChannels": json.dumps(data.get("onlineChannels", [])),
-        "totalTokenUsage": data.get("totalTokenUsage", 0)
-    })
-    if status not in (200, 201):
-        return jsonify({"error": "Failed to update status"}), 500
-
-    return jsonify({"ok": True}), 200
+    try:
+        instance_token = request.headers.get("X-Instance-Token", "")
+        if not instance_token:
+            return jsonify({"error": "Missing X-Instance-Token"}), 401
+        instance = get_instance_by_token(instance_token)
+        if not instance:
+            return jsonify({"error": "Invalid instance token"}), 401
+        data = request.get_json() or {}
+        channels = data.get("channels", [])
+        if isinstance(channels, list):
+            channels = ",".join(channels)
+        lastUpdate = int(time.time())
+        online_channels = data.get("onlineChannels", [])
+        if isinstance(online_channels, list):
+            online_channels = json.dumps(online_channels)
+        elif not online_channels:
+            online_channels = "[]"
+        # Upsert relay_status by instance_id
+        filter_q = f'instance_id="{instance["id"]}"'
+        status, result = pb_upsert("relay_status", filter_q, {
+            "instance_id": instance["id"],
+            "ok": bool(data.get("ok", False)),
+            "uptime": int(data.get("uptime", 0)),
+            "channels": str(channels),
+            "memory": float(data.get("memory", 0)),
+            "cpu": float(data.get("cpu", 0)),
+            "last_message_ago": int(data.get("last_message_ago", 0)),
+            "lastUpdate": lastUpdate,
+            "version": str(data.get("version", "")),
+            "currentModel": str(data.get("currentModel", "")),
+            "currentAgent": str(data.get("currentAgent", "")),
+            "sessionCount": int(data.get("sessionCount", 0)),
+            "channelCount": int(data.get("channelCount", 0)),
+            "nodeCount": int(data.get("nodeCount", 0)),
+            "onlineChannels": online_channels,
+            "totalTokenUsage": int(data.get("totalTokenUsage", 0))
+        })
+        if status not in (200, 201):
+            print(f"[oc_status] pb_upsert relay_status FAILED: status={status} result={result}")
+            return jsonify({"error": "Failed to update status", "detail": str(result)[:300]}), 500
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Internal error", "detail": str(e)[:200]}), 500
 
 @app.route("/api/v1/oc/status/<instance_id>", methods=["GET"])
 def oc_status_get(instance_id):
