@@ -536,6 +536,53 @@ def oc_status_get(instance_id):
         "totalTokenUsage": st.get("totalTokenUsage", 0),
     }), 200
 
+@app.route("/api/v1/oc/instances", methods=["GET"])
+def oc_instances():
+    """List all OpenClaw instances for the authenticated user (auto-discovery for App)"""
+    user_token = request.headers.get("X-User-Token", "")
+    if not user_token:
+        return jsonify({"error": "Missing X-User-Token"}), 401
+    user = get_user_by_relay_token(user_token)
+    if not user:
+        return jsonify({"error": "Invalid relay_token"}), 401
+
+    # Get all instances for this user
+    filter_enc = requests.utils.quote(f'user_id="{user["id"]}"')
+    _, instances_data = pb_get("oc_instances", params={"filter": filter_enc})
+    instance_items = instances_data.get("items", []) if instances_data else []
+
+    result = []
+    for inst in instance_items:
+        inst_id = inst.get("id")
+        # Get latest status for this instance
+        status_filter = requests.utils.quote(f'instance_id="{inst_id}"')
+        _, status_data = pb_get("relay_status", params={"filter": status_filter, "sort": "-lastUpdate", "perPage": 1})
+        status_items = status_data.get("items", []) if status_data else []
+        st = status_items[0] if status_items else {}
+        channels = st.get("channels", "")
+        if isinstance(channels, str):
+            channels = [c for c in channels.split(",") if c]
+        result.append({
+            "id": inst_id,
+            "name": inst.get("name", ""),
+            "ok": bool(st.get("ok")),
+            "uptime": st.get("uptime", 0),
+            "cpu": st.get("cpu", 0),
+            "memory": st.get("memory", 0),
+            "channels": channels,
+            "lastUpdate": st.get("lastUpdate", 0),
+            "version": st.get("version", ""),
+            "currentModel": st.get("currentModel", ""),
+            "currentAgent": st.get("currentAgent", ""),
+            "sessionCount": st.get("sessionCount", 0),
+            "channelCount": st.get("channelCount", 0),
+            "nodeCount": st.get("nodeCount", 0),
+            "onlineChannels": st.get("onlineChannels", []),
+            "totalTokenUsage": st.get("totalTokenUsage", 0),
+        })
+
+    return jsonify({"instances": result}), 200
+
 @app.route("/api/v1/oc/thinking", methods=["POST"])
 def oc_thinking():
     """Push thinking status"""
