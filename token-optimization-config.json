@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "strategies": {
+    "context_optimization": true,
+    "model_routing": true,
+    "heartbeat_optimization": true,
+    "budget_tracking": true
+  },
+  "defaults": {
+    "simple_tasks_model": "anthropic/claude-haiku-4",
+    "complex_tasks_model": "anthropic/claude-sonnet-4-5",
+    "heartbeat_model": "anthropic/claude-haiku-4",
+    "daily_budget_usd": 5.0
+  },
+  "rules": {
+    "always_haiku": ["hi", "thanks", "ok", "got it", "hello"],
+    "background_tasks": ["parse", "check", "monitor", "log", "read"],
+    "complex_tasks": ["design", "architect", "analyze", "strategy", "plan"]
+  }
+}

@@ -1,0 +1,4 @@
+ENDPOINT=/inboxes/cilao@agentmail.to/messages/send
+METHOD=POST
+STATUS=200
+RESPONSE={"message_id": "<0100019cd91b9710-d759df37-d1d9-4c22-b597-9219bf40af7f-000000@email.amazonses.com>", "thread_id": "bf09b523-839f-4967-9fbf-9d48006e7d4f"}
