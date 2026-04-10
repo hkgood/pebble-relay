@@ -27,6 +27,38 @@
             margin: 0 auto;
             padding: 30px 40px;
         }
+        
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: rgba(255,255,255,0.05);
+            padding: 4px;
+            border-radius: 12px;
+            width: fit-content;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: #888;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #fff;
+        }
+        
+        /* Login Box */
         .login-box {
             max-width: 400px;
             margin: 100px auto;
@@ -60,22 +92,23 @@
         }
         button:hover { opacity: 0.9; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-primary {
-            width: 100%;
-            padding: 14px;
-        }
-        .btn-secondary {
-            background: rgba(255,255,255,0.1);
-            padding: 10px 20px;
-            font-size: 14px;
-        }
-        .btn-danger {
-            background: rgba(255,82,82,0.2);
-            color: #ff6b6b;
-            padding: 8px 16px;
-            font-size: 14px;
-        }
+        .btn-primary { width: 100%; padding: 14px; }
+        .btn-secondary { background: rgba(255,255,255,0.1); padding: 10px 20px; font-size: 14px; }
+        .btn-danger { background: rgba(255,82,82,0.2); color: #ff6b6b; padding: 8px 16px; font-size: 14px; }
         .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .btn-add {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            box-shadow: 0 4px 20px rgba(79,172,254,0.4);
+        }
+        
+        /* Stats */
         .stats {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -89,16 +122,10 @@
             text-align: center;
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .stat-card .number {
-            font-size: 32px;
-            font-weight: 700;
-            color: #4facfe;
-        }
-        .stat-card .label {
-            font-size: 13px;
-            color: #888;
-            margin-top: 5px;
-        }
+        .stat-card .number { font-size: 32px; font-weight: 700; color: #4facfe; }
+        .stat-card .label { font-size: 13px; color: #888; margin-top: 5px; }
+        
+        /* Sections */
         .section {
             background: rgba(255,255,255,0.05);
             border-radius: 12px;
@@ -106,11 +133,7 @@
             margin-bottom: 20px;
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .section h3 {
-            margin-bottom: 16px;
-            font-size: 16px;
-            color: #aaa;
-        }
+        .section h3 { margin-bottom: 16px; font-size: 16px; color: #aaa; }
         .section h3 .badge {
             font-size: 12px;
             background: rgba(79,172,254,0.2);
@@ -119,15 +142,17 @@
             border-radius: 10px;
             margin-left: 8px;
         }
+        
+        /* Create User Form */
         .create-user-form {
             display: grid;
             grid-template-columns: 1fr auto;
             gap: 12px;
             align-items: end;
         }
-        .create-user-form input {
-            margin-bottom: 0;
-        }
+        .create-user-form input { margin-bottom: 0; }
+        
+        /* User List */
         .user-list { margin-top: 16px; }
         .user-item {
             background: rgba(0,0,0,0.2);
@@ -161,19 +186,10 @@
         .instance-item .inst-name { color: #ccc; }
         .instance-item .inst-id { font-family: monospace; font-size: 11px; color: #555; }
         .no-instances { font-size: 12px; color: #555; padding: 4px 0; }
-        .user-stats-row {
-            display: flex;
-            gap: 8px;
-            margin-top: 8px;
-            flex-wrap: wrap;
-        }
-        .stat-badge {
-            font-size: 11px;
-            background: rgba(255,255,255,0.08);
-            padding: 3px 8px;
-            border-radius: 6px;
-            color: #888;
-        }
+        .user-stats-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+        .stat-badge { font-size: 11px; background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; color: #888; }
+        
+        /* Token Section */
         .token-section {
             background: rgba(0,255,136,0.08);
             border: 1px solid rgba(0,255,136,0.2);
@@ -181,17 +197,8 @@
             padding: 12px;
             margin-top: 12px;
         }
-        .token-label {
-            font-size: 11px;
-            color: #0f0;
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-        .token-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .token-label { font-size: 11px; color: #0f0; margin-bottom: 6px; font-weight: 600; }
+        .token-row { display: flex; align-items: center; gap: 8px; }
         .token-value {
             font-family: monospace;
             font-size: 12px;
@@ -224,12 +231,7 @@
             padding: 16px;
             margin-top: 16px;
         }
-        .token-display .token-label {
-            font-size: 12px;
-            color: #0f0;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
+        .token-display .token-label { font-size: 12px; color: #0f0; margin-bottom: 8px; font-weight: 600; }
         .token-display .token-value {
             font-family: monospace;
             font-size: 13px;
@@ -239,18 +241,12 @@
             padding: 10px;
             border-radius: 6px;
         }
-        .token-display .token-warning {
-            font-size: 12px;
-            color: #ff6b6b;
-            margin-top: 8px;
-        }
-        .logout-btn {
-            background: rgba(255,82,82,0.2);
-            color: #ff6b6b;
-            width: auto;
-            padding: 10px 20px;
-            font-size: 14px;
-        }
+        .token-display .token-warning { font-size: 12px; color: #ff6b6b; margin-top: 8px; }
+        
+        /* Logout */
+        .logout-btn { background: rgba(255,82,82,0.2); color: #ff6b6b; width: auto; padding: 10px 20px; font-size: 14px; }
+        
+        /* Utils */
         .hidden { display: none !important; }
         .loading {
             display: inline-block;
@@ -263,6 +259,8 @@
             vertical-align: middle;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Toast */
         .toast {
             position: fixed;
             bottom: 30px;
@@ -279,6 +277,8 @@
         }
         .toast.show { opacity: 1; }
         .toast.error { background: rgba(255,82,82,0.9); color: #fff; }
+        
+        /* Info Box */
         .info-box {
             background: rgba(79,172,254,0.1);
             border: 1px solid rgba(79,172,254,0.2);
@@ -289,13 +289,212 @@
             margin-bottom: 20px;
         }
         .info-box strong { color: #4facfe; }
-        .qr-section { margin-top: 8px; text-align: center; }
-        .qr-section canvas { display: inline-block; border: 1px solid #333; border-radius: 4px; }
         .token-full { font-family: monospace; font-size: 11px; word-break: break-all; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; display: none; margin-top: 4px; }
         .token-full.show { display: block; }
         .token-row-main { display: flex; gap: 8px; align-items: center; }
+        
+        /* Floating Action Button */
+        .fab-container {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 100;
+        }
+        
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Add Modal */
+        .add-modal {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 20px;
+            padding: 24px;
+            width: 90%;
+            max-width: 480px;
+            max-height: 85vh;
+            overflow-y: auto;
+            border: 1px solid rgba(255,255,255,0.1);
+            transform: scale(0.9) translateY(20px);
+            transition: transform 0.3s;
+        }
+        .modal-overlay.show .add-modal {
+            transform: scale(1) translateY(0);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { background: rgba(255,255,255,0.2); color: #fff; }
+        
+        /* Modal Tabs */
+        .modal-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            background: rgba(255,255,255,0.05);
+            padding: 4px;
+            border-radius: 10px;
+        }
+        .modal-tab {
+            flex: 1;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: #888;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .modal-tab:hover { color: #fff; }
+        .modal-tab.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: #fff;
+        }
+        
+        /* Quick Add Content */
+        .quick-add-content {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .quick-add-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .quick-add-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .quick-add-desc {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .quick-add-steps {
+            text-align: left;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .quick-add-step {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .quick-add-step:last-child { margin-bottom: 0; }
+        .step-num {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(79,172,254,0.2);
+            color: #4facfe;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .step-text { color: #ccc; line-height: 1.5; }
+        .step-text strong { color: #fff; }
+        
+        /* Manual Add Content */
+        .manual-add-content {
+            padding: 8px 0;
+        }
+        
+        /* Token Copy Box */
+        .token-copy-box {
+            background: rgba(0,255,136,0.1);
+            border: 1px solid rgba(0,255,136,0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .token-copy-box .label {
+            font-size: 12px;
+            color: #0f0;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .token-copy-box .token-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .token-copy-box .token-value {
+            flex: 1;
+            font-family: monospace;
+            font-size: 12px;
+            color: #fff;
+            background: rgba(0,0,0,0.3);
+            padding: 10px 12px;
+            border-radius: 8px;
+            word-break: break-all;
+        }
+        
+        /* Success State */
+        .success-state {
+            text-align: center;
+            padding: 30px 0;
+        }
+        .success-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .success-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #00ff88;
+            margin-bottom: 8px;
+        }
+        .success-desc {
+            font-size: 14px;
+            color: #888;
+        }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 </head>
 <body>
     <div class="header">
@@ -319,50 +518,137 @@
 
     <!-- Dashboard -->
     <div id="dashboardSection" class="container hidden">
-        <div class="info-box">
-            <strong>用户 Token 说明：</strong>创建用户后请立即复制 Token，此 Token 仅显示一次，无法找回。用户需将此 Token 输入到 watch-claw 插件或 iOS/App 应用中完成绑定。
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+            <button class="tab-btn active" data-tab="xiechang" onclick="switchTab('xiechang')">🦐 虾厂</button>
+            <button class="tab-btn" data-tab="users" onclick="switchTab('users')">👥 用户</button>
         </div>
-
-        <div class="stats">
-            <div class="stat-card">
-                <div class="number" id="statUsers">-</div>
-                <div class="label">用户数</div>
-            </div>
-            <div class="stat-card">
-                <div class="number" id="statInstances">-</div>
-                <div class="label">实例数</div>
-            </div>
-            <div class="stat-card">
-                <div class="number" id="statWatches">-</div>
-                <div class="label">手表数</div>
-            </div>
-        </div>
-
-        <div id="dbStatusBox" class="info-box" style="display:none;"></div>
-
-        <div class="section">
-            <h3>➕ 创建用户 <span class="badge">直接注册</span></h3>
-            <div class="create-user-form">
-                <div>
-                    <label>用户名称</label>
-                    <input type="text" id="newUserName" placeholder="例如：张三的Watch" onkeypress="if(event.key==='Enter')createUser()">
+        
+        <!-- 虾厂 Tab -->
+        <div id="tab-xiechang" class="tab-content">
+            <div id="dbStatusBox" class="info-box" style="display:none;"></div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="number" id="statUsers">-</div>
+                    <div class="label">用户数</div>
                 </div>
-                <button class="btn-secondary" onclick="createUser()" style="padding: 14px 24px;">创建</button>
-            </div>
-            <div id="tokenDisplay" class="token-section hidden">
-                <div class="token-label">✅ 用户创建成功 — Token 仅显示一次，请立即复制保存：</div>
-                <div class="token-row">
-                    <div class="token-value" id="tokenValue"></div>
-                    <button class="copy-btn" onclick="copyToken()">复制</button>
+                <div class="stat-card">
+                    <div class="number" id="statInstances">-</div>
+                    <div class="label">实例数</div>
                 </div>
-                <div class="token-warning" style="font-size:12px;color:#ff6b6b;margin-top:8px;">⚠️ 此 Token 无法找回，请妥善保管！</div>
+                <div class="stat-card">
+                    <div class="number" id="statWatches">-</div>
+                    <div class="label">手表数</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>最近添加的用户</h3>
+                <div id="recentUsers" class="user-list">
+                    <p style="color:#666;text-align:center;padding:20px;">加载中...</p>
+                </div>
             </div>
         </div>
+        
+        <!-- 用户 Tab -->
+        <div id="tab-users" class="tab-content hidden">
+            <div class="section">
+                <h3>👥 用户列表 <span class="badge" id="userCountBadge">0</span></h3>
+                <div id="userList" class="user-list">
+                    <p style="color:#666;text-align:center;padding:20px;">加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Floating Action Button -->
+    <div class="fab-container" id="fabContainer">
+        <button class="btn-add" onclick="openAddModal()" title="添加用户">+</button>
+    </div>
 
-        <div class="section">
-            <h3>👥 用户列表 <span class="badge" id="userCountBadge">0</span></h3>
-            <div id="userList" class="user-list">
-                <p style="color:#666;text-align:center;padding:20px;">加载中...</p>
+    <!-- Add User Modal -->
+    <div id="addModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+        <div class="add-modal">
+            <div class="modal-header">
+                <h2>添加用户</h2>
+                <button class="modal-close" onclick="closeAddModal()">×</button>
+            </div>
+            
+            <!-- Modal Tabs -->
+            <div class="modal-tabs">
+                <button class="modal-tab active" data-tab="quick" onclick="switchModalTab('quick')">🚀 快速添加</button>
+                <button class="modal-tab" data-tab="manual" onclick="switchModalTab('manual')">✏️ 手动添加</button>
+            </div>
+            
+            <!-- Quick Add Content -->
+            <div id="modal-quick" class="modal-tab-content">
+                <div id="quick-add-form">
+                    <div class="quick-add-content">
+                        <div class="quick-add-icon">⌚</div>
+                        <div class="quick-add-title">通过 OpenClaw 插件添加</div>
+                        <div class="quick-add-desc">
+                            在 OpenClaw 中安装 watch-claw 插件，自动发现并绑定 Pebble Relay 实例
+                        </div>
+                    </div>
+                    
+                    <div class="quick-add-steps">
+                        <div class="quick-add-step">
+                            <span class="step-num">1</span>
+                            <span class="step-text">在 OpenClaw 中安装 <strong>watch-claw</strong> 插件</span>
+                        </div>
+                        <div class="quick-add-step">
+                            <span class="step-num">2</span>
+                            <span class="step-text">复制下方 Token，发送给 OpenClaw</span>
+                        </div>
+                        <div class="quick-add-step">
+                            <span class="step-num">3</span>
+                            <span class="step-text">OpenClaw 将自动完成实例注册和绑定</span>
+                        </div>
+                    </div>
+                    
+                    <div class="token-copy-box">
+                        <div class="label">📋 复制此 Token 发送给 OpenClaw</div>
+                        <div class="token-row">
+                            <div class="token-value" id="quickTokenDisplay">加载中...</div>
+                            <button class="copy-btn" id="quickCopyBtn" onclick="copyQuickToken()">复制</button>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-primary" onclick="initiateQuickAdd()" id="quickStartBtn">
+                        开始快速添加
+                    </button>
+                </div>
+                
+                <div id="quick-add-success" class="success-state hidden">
+                    <div class="success-icon">🎉</div>
+                    <div class="success-title">等待 OpenClaw 连接...</div>
+                    <div class="success-desc">
+                        请在 OpenClaw 中完成插件配置<br>
+                        刷新页面查看最新用户列表
+                    </div>
+                    <button class="btn-secondary" style="margin-top:20px;" onclick="closeAddModal()">完成</button>
+                </div>
+            </div>
+            
+            <!-- Manual Add Content -->
+            <div id="modal-manual" class="modal-tab-content hidden">
+                <div class="manual-add-content">
+                    <div class="form-group">
+                        <label>用户名称</label>
+                        <input type="text" id="newUserName" placeholder="例如：张三的Watch">
+                    </div>
+                    <button class="btn-primary" onclick="createUser()" id="manualCreateBtn">
+                        创建用户
+                    </button>
+                    
+                    <div id="tokenDisplay" class="token-display hidden">
+                        <div class="token-label">✅ 用户创建成功 — Token 仅显示一次，请立即复制保存：</div>
+                        <div class="token-value" id="tokenValue"></div>
+                        <button class="copy-btn" style="margin-top:12px;" onclick="copyToken()">复制 Token</button>
+                        <div class="token-warning">⚠️ 此 Token 无法找回，请妥善保管！</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -372,8 +658,45 @@
     <script>
         let adminPassword = localStorage.getItem('pebble_admin_password') || '';
         let relayUrl = localStorage.getItem('pebble_relay_url') || 'http://115.29.162.18:8977';
+        let currentUserToken = ''; // For quick add flow
 
         document.getElementById('serverUrl').textContent = relayUrl;
+
+        // 移动端友好的一键复制函数
+        async function copyToClipboard(text, btn) {
+            if (!text) return;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    textarea.style.left = '-9999px';
+                    document.body.appendChild(textarea);
+                    textarea.focus();
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '已复制!';
+                    btn.classList.add('copied');
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.classList.remove('copied');
+                    }, 2000);
+                }
+            } catch (e) {
+                console.error('Copy failed:', e);
+                if (btn) {
+                    btn.textContent = '长按复制';
+                    btn.title = text;
+                }
+            }
+        }
 
         function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
@@ -391,7 +714,6 @@
                 return;
             }
             
-            // Verify password by calling admin info endpoint with X-Admin-Token header
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/info`, {
                     headers: { 'X-Admin-Token': password }
@@ -417,14 +739,17 @@
             document.getElementById('dashboardSection').classList.add('hidden');
             document.getElementById('logoutBtn').classList.add('hidden');
             document.getElementById('adminName').classList.add('hidden');
+            document.getElementById('fabContainer').classList.add('hidden');
         }
 
         async function showDashboard() {
             document.getElementById('loginSection').classList.add('hidden');
             document.getElementById('dashboardSection').classList.remove('hidden');
             document.getElementById('logoutBtn').classList.remove('hidden');
+            document.getElementById('fabContainer').classList.remove('hidden');
             await checkDbStatus();
             await loadStats();
+            await loadRecentUsers();
             await loadUsers();
         }
 
@@ -476,44 +801,46 @@
             }
         }
 
-        async function createUser() {
-            const name = document.getElementById('newUserName').value.trim();
-            if (!name) {
-                showToast('请输入用户名称', true);
-                return;
-            }
-
-            const btn = document.querySelector('.create-user-form button');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loading"></span>创建中...';
-
+        async function loadRecentUsers() {
+            const list = document.getElementById('recentUsers');
             try {
                 const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Token': adminPassword
-                    },
-                    body: JSON.stringify({ name: name })
+                    headers: { 'X-Admin-Token': adminPassword }
                 });
-
-                const data = await resp.json();
-                
-                if (resp.ok && data.user_token) {
-                    document.getElementById('tokenValue').textContent = data.user_token;
-                    document.getElementById('tokenDisplay').classList.remove('hidden');
-                    document.getElementById('newUserName').value = '';
-                    showToast('用户创建成功');
-                    await loadUsers();
-                    await loadStats();
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const users = data.users || [];
+                    
+                    if (users.length === 0) {
+                        list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">暂无用户，点击右下角 + 添加</p>';
+                        return;
+                    }
+                    
+                    // Show last 5 users
+                    const recent = users.slice(-5).reverse();
+                    list.innerHTML = recent.map(u => {
+                        const instances = u.instances || [];
+                        const watches = u.watches || [];
+                        return `
+                            <div class="user-item">
+                                <div class="user-header">
+                                    <div class="user-info">
+                                        <div class="name">${u.name || '未命名'}</div>
+                                        <div class="created">创建: ${u.created_at || '-'}</div>
+                                    </div>
+                                    <div class="user-stats-row">
+                                        <span class="stat-badge">实例: ${instances.length}</span>
+                                        <span class="stat-badge">手表: ${watches.length}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
                 } else {
-                    showToast(data.error || '创建失败', true);
+                    list.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:20px;">加载失败</p>';
                 }
             } catch (e) {
-                showToast('网络错误：' + e.message, true);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '创建';
+                list.innerHTML = '<p style="color:#ff6b6b;text-align:center;padding:20px;">网络错误</p>';
             }
         }
 
@@ -532,7 +859,6 @@
                             const instances = u.instances || [];
                             const watches = u.watches || [];
                             const token = u.user_token || '';
-                            const maskedToken = token ? token.substring(0, 6) + '****' + token.substring(token.length - 4) : '-';
                             
                             const instHtml = instances.length 
                                 ? instances.map(i => `
@@ -571,12 +897,11 @@
                                     <div class="token-section">
                                         <div class="token-label">Relay Token</div>
                                         <div class="token-row-main">
-                                            <button class="copy-btn" onclick="toggleUserToken(this, '${token}')">显示</button>
+                                            <button class="copy-btn" onclick="toggleUserToken(this)">显示</button>
                                             <button class="copy-btn" onclick="copyUserToken('${token}', this)">复制</button>
                                             <button class="copy-btn danger" onclick="regenerateUserToken('${u.id}', this)">重置</button>
                                         </div>
                                         <div class="token-full" id="token-full-${u.id}">${token}</div>
-                                        <div class="qr-section" id="qr-${u.id}"></div>
                                     </div>
                                     <div class="instance-list">
                                         <div style="font-size:11px;color:#555;margin-bottom:4px;">实例 (${instances.length})</div>
@@ -601,39 +926,17 @@
         }
 
         function copyUserToken(token, btn) {
-            if (!token) return;
-            navigator.clipboard.writeText(token).then(() => {
-                btn.textContent = '已复制!';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.textContent = '复制';
-                    btn.classList.remove('copied');
-                }, 2000);
-            });
+            copyToClipboard(token, btn);
         }
 
-        function toggleUserToken(btn, token) {
+        function toggleUserToken(btn) {
             const userId = btn.closest('.token-section').querySelector('.token-full').id.replace('token-full-', '');
             const fullDiv = document.getElementById('token-full-' + userId);
-            const qrDiv = document.getElementById('qr-' + userId);
             if (fullDiv.classList.contains('show')) {
                 fullDiv.classList.remove('show');
-                qrDiv.innerHTML = '';
                 btn.textContent = '显示';
             } else {
                 fullDiv.classList.add('show');
-                // Generate QR code
-                qrDiv.innerHTML = '';
-                if (token) {
-                    try {
-                        var qr = qrcode(0, 'M');
-                        qr.addData(token);
-                        qr.make();
-                        qrDiv.innerHTML = qr.createSvgTag({ cellsize: 3, margin: 2 });
-                    } catch(e) {
-                        qrDiv.innerHTML = '<span style="font-size:11px;color:#ff6b6b;">QR生成失败</span>';
-                    }
-                }
                 btn.textContent = '隐藏';
             }
         }
@@ -650,11 +953,8 @@
                 const data = await resp.json();
                 if (resp.ok && data.ok) {
                     showToast('Token已重置');
-                    // Update the displayed token
                     const fullDiv = document.getElementById('token-full-' + userId);
-                    const qrDiv = document.getElementById('qr-' + userId);
                     fullDiv.textContent = data.user_token;
-                    qrDiv.innerHTML = '';
                     btn.closest('.token-section').querySelector('.copy-btn').textContent = '显示';
                 } else {
                     showToast(data.error || '重置失败', true);
@@ -670,15 +970,8 @@
 
         function copyToken() {
             const token = document.getElementById('tokenValue').textContent;
-            navigator.clipboard.writeText(token).then(() => {
-                const btn = document.querySelector('#tokenDisplay .copy-btn');
-                btn.textContent = '已复制!';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.textContent = '复制';
-                    btn.classList.remove('copied');
-                }, 2000);
-            });
+            const btn = document.querySelector('#tokenDisplay .copy-btn');
+            copyToClipboard(token, btn);
         }
 
         async function deleteUser(userId) {
@@ -691,6 +984,7 @@
                 if (resp.ok) {
                     showToast('用户已删除');
                     await loadUsers();
+                    await loadRecentUsers();
                     await loadStats();
                 } else {
                     const data = await resp.json();
@@ -698,6 +992,151 @@
                 }
             } catch (e) {
                 showToast('网络错误', true);
+            }
+        }
+
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            document.getElementById('tab-' + tabName).classList.remove('hidden');
+        }
+
+        // Modal functions
+        function openAddModal() {
+            document.getElementById('addModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+            // Reset modal state
+            document.getElementById('quick-add-form').classList.remove('hidden');
+            document.getElementById('quick-add-success').classList.add('hidden');
+            document.getElementById('tokenDisplay').classList.add('hidden');
+            document.getElementById('newUserName').value = '';
+            // Switch to quick tab by default
+            switchModalTab('quick');
+            // Generate quick token
+            generateQuickToken();
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+
+        function closeModalOnOverlay(event) {
+            if (event.target.id === 'addModal') {
+                closeAddModal();
+            }
+        }
+
+        function switchModalTab(tabName) {
+            document.querySelectorAll('.modal-tab').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.modal-tab-content').forEach(content => content.classList.add('hidden'));
+            document.querySelector(`.modal-tab[data-tab="${tabName}"]`).classList.add('active');
+            document.getElementById('modal-' + tabName).classList.remove('hidden');
+        }
+
+        async function generateQuickToken() {
+            // Generate a temporary token for quick add
+            try {
+                // Create a special quick-add token
+                const randomSuffix = Math.random().toString(36).substring(2, 10);
+                currentUserToken = 'quick_' + Date.now() + '_' + randomSuffix;
+                document.getElementById('quickTokenDisplay').textContent = currentUserToken;
+            } catch (e) {
+                document.getElementById('quickTokenDisplay').textContent = '生成失败，请重试';
+            }
+        }
+
+        function copyQuickToken() {
+            const token = document.getElementById('quickTokenDisplay').textContent;
+            const btn = document.getElementById('quickCopyBtn');
+            copyToClipboard(token, btn);
+        }
+
+        async function initiateQuickAdd() {
+            const btn = document.getElementById('quickStartBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>创建中...';
+            
+            try {
+                // Create a new user with generated token
+                const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Token': adminPassword
+                    },
+                    body: JSON.stringify({ 
+                        name: 'Quick-' + Date.now().toString().slice(-6)
+                    })
+                });
+                
+                const data = await resp.json();
+                
+                if (resp.ok && data.user_token) {
+                    currentUserToken = data.user_token;
+                    document.getElementById('quickTokenDisplay').textContent = currentUserToken;
+                    
+                    // Show success state
+                    document.getElementById('quick-add-form').classList.add('hidden');
+                    document.getElementById('quick-add-success').classList.remove('hidden');
+                    
+                    // Refresh data
+                    await loadUsers();
+                    await loadRecentUsers();
+                    await loadStats();
+                    showToast('用户创建成功');
+                } else {
+                    showToast(data.error || '创建失败', true);
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '开始快速添加';
+            }
+        }
+
+        async function createUser() {
+            const name = document.getElementById('newUserName').value.trim();
+            if (!name) {
+                showToast('请输入用户名称', true);
+                return;
+            }
+
+            const btn = document.getElementById('manualCreateBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>创建中...';
+
+            try {
+                const resp = await fetch(`${relayUrl}/api/v1/admin/users`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Token': adminPassword
+                    },
+                    body: JSON.stringify({ name: name })
+                });
+
+                const data = await resp.json();
+                
+                if (resp.ok && data.user_token) {
+                    document.getElementById('tokenValue').textContent = data.user_token;
+                    document.getElementById('tokenDisplay').classList.remove('hidden');
+                    document.getElementById('newUserName').value = '';
+                    showToast('用户创建成功');
+                    await loadUsers();
+                    await loadRecentUsers();
+                    await loadStats();
+                } else {
+                    showToast(data.error || '创建失败', true);
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '创建用户';
             }
         }
 

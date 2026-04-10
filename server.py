@@ -1,5 +1,5 @@
 """
-pebble-relay v2.1
+pebble-relay v1.0.3
 Multi-user relay server for OpenClaw <-> Smartwatch
 Uses PocketBase for all data storage: relay_users, oc_instances, watch_devices, relay_status, relay_messages
 """
